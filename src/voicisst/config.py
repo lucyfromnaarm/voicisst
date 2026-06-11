@@ -135,6 +135,8 @@ class UIConfig:
     beep: bool = True
     notify: bool = True
     tray: bool = False
+    web_port: int = 8766  # the local web dashboard/settings UI
+    open_browser: bool = True  # auto-open the UI when it starts
 
 
 @dataclass
@@ -389,6 +391,8 @@ token = ""
 [ui]
 beep = true
 notify = true
+web_port = 8766           # voicisst ui / voicisst run --ui (localhost only)
+open_browser = true
 
 [history]
 enabled = false           # keep a local log of everything you dictate
