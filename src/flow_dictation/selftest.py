@@ -99,7 +99,12 @@ def _print_config_summary(cfg: Config) -> None:
 
 
 def _check_hotkeys(cfg: Config) -> str:
-    """Which backend get_listener would pick — without starting anything."""
+    """Which backend get_listener would pick — without starting anything.
+
+    On the evdev path this also verifies that some readable keyboard actually
+    exposes one of the configured keycodes; a readable /dev/input alone says
+    nothing about whether the hotkey can ever fire.
+    """
     from .hotkeys.evdev_listener import INPUT_GROUP_HINT, EvdevListener
     from .hotkeys.pynput_listener import PynputListener
 
@@ -108,7 +113,7 @@ def _check_hotkeys(cfg: Config) -> str:
     if backend == "evdev":
         if not EvdevListener.available():
             raise RuntimeError(f"evdev backend unusable — {INPUT_GROUP_HINT}")
-        return f"evdev would listen for [{keys}]"
+        return f"evdev: {_check_evdev_keys(cfg)}"
     if backend == "pynput":
         if not PynputListener.available():
             raise RuntimeError(
@@ -116,7 +121,7 @@ def _check_hotkeys(cfg: Config) -> str:
             )
         return f"pynput would listen for [{keys}]"
     if sys.platform == "linux" and EvdevListener.available():
-        return f"auto -> evdev for [{keys}]"
+        return f"auto -> evdev: {_check_evdev_keys(cfg)}"
     if PynputListener.available():
         return f"auto -> pynput for [{keys}]"
     if sys.platform == "linux":
@@ -124,6 +129,26 @@ def _check_hotkeys(cfg: Config) -> str:
     raise RuntimeError(
         "no usable hotkey backend — install pynput and grant input-monitoring permission"
     )
+
+
+def _check_evdev_keys(cfg: Config) -> str:
+    """Verify at least one readable input device exposes a configured key."""
+    from .hotkeys.evdev_listener import INPUT_GROUP_HINT, EvdevListener
+
+    listener = EvdevListener(cfg.hotkey.keys, lambda: None, lambda: None)
+    try:
+        devices, _codes = listener._find_devices()
+    except PermissionError as e:
+        raise RuntimeError(f"cannot read /dev/input ({e}) — {INPUT_GROUP_HINT}") from e
+    for dev in devices:
+        EvdevListener._close_quietly(dev)
+    keys = ", ".join(cfg.hotkey.keys)
+    if not devices:
+        raise RuntimeError(
+            f"no keyboard exposes {keys} — set hotkey.keys to a key you have "
+            '(e.g. "KEY_RIGHTALT", "KEY_F9"); find names with python -m evdev.evtest'
+        )
+    return f"{len(devices)} device(s) expose [{keys}]"
 
 
 def _check_audio(cfg: Config, seconds: float) -> str:
@@ -205,7 +230,48 @@ def _check_polish(cfg: Config, holder: dict[str, Any]) -> str:
     eng = holder.get("engine")
     if eng is None:
         raise _Skip("engine unavailable (see the engine step)")
-    sample = str(eng.polish("um hello world comma this is a test"))
+    if cfg.engine.mode != "remote":
+        # Engines swallow polish failures at runtime (dictation must never
+        # lose text), so the round-trip below can't fail on its own — probe
+        # the backend directly first. In remote mode the polish backend lives
+        # on the server, so the local polish.url says nothing about it.
+        _probe_polish_backend(cfg)
+    filler = "um hello world comma this is a test"
+    sample = str(eng.polish(filler))
     if not sample.strip():
         raise RuntimeError("polish returned empty text")
+    if sample.strip() == filler:
+        raise RuntimeError(
+            "polish returned its input unchanged — no LLM ran (runtime polish "
+            "errors are swallowed; check the polish backend and model)"
+        )
     return f"sample: {sample[:60]!r}"
+
+
+def _probe_polish_backend(cfg: Config) -> None:
+    """Talk to the polish backend directly; raise with a fix hint on failure."""
+    import requests  # lazy: selftest must import headless
+
+    backend = cfg.polish.backend.strip().lower()
+    base = cfg.polish.url.rstrip("/")
+    if backend == "ollama":
+        try:
+            r = requests.get(f"{base}/api/tags", timeout=3)
+            r.raise_for_status()
+        except Exception as e:
+            raise RuntimeError(
+                f"ollama not running — systemctl status ollama (GET {base}/api/tags: {e})"
+            ) from e
+        tags = [m.get("name", "") for m in r.json().get("models", [])]
+        if cfg.polish.model not in tags:
+            raise RuntimeError(
+                f"model not pulled — ollama pull {cfg.polish.model} (server has: {tags})"
+            )
+    elif backend == "openai":
+        try:
+            requests.get(base, timeout=3)
+        except Exception as e:
+            raise RuntimeError(
+                f"openai-compatible server unreachable at {base} ({e}) — "
+                "check polish.url in config.toml and that the server is running"
+            ) from e

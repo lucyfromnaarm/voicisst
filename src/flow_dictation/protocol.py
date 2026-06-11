@@ -16,6 +16,12 @@ import numpy as np
 PROTOCOL_VERSION = 1
 DEFAULT_PORT = 8765
 
+# Hard cap on one utterance's decoded audio (REST body or WS stream).
+# 120 s of 16 kHz stereo int16 is ~7.7 MB; 32 MiB leaves generous headroom
+# for higher sample rates while still bounding memory per request/stream.
+MAX_AUDIO_BYTES = 32 * 1024 * 1024
+MAX_AUDIO_SAMPLES = MAX_AUDIO_BYTES // 2  # int16 samples
+
 # Websocket text-frame message types ({"type": ...}).
 MSG_START = "start"
 MSG_PARTIAL = "partial"

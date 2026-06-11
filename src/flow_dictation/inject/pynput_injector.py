@@ -14,6 +14,71 @@ import sys
 from ..config import OutputConfig
 from .base import Injector
 
+_ACCESSIBILITY_HINT = (
+    "macOS is silently dropping Flow's synthetic keystrokes.\n"
+    "Grant Accessibility permission to your terminal (or the Flow app) in\n"
+    "System Settings -> Privacy & Security -> Accessibility, then restart Flow."
+)
+
+# Process-wide: the Accessibility probe runs (and may hint) at most once,
+# even across injector instances — a permanent condition, not worth spam.
+_trust_probe_done = False
+
+
+def _darwin_ax_trusted() -> bool | None:
+    """Return AXIsProcessTrusted() on macOS, or None when unprobeable.
+
+    Tries the pyobjc ``HIServices`` module first (it ships with pynput's
+    macOS extras and is exactly what pynput's own listeners consult), then
+    falls back to calling AXIsProcessTrusted via ctypes. Never raises; on
+    Linux/Windows both probes simply fail and we report None.
+    """
+    try:
+        import HIServices  # pyobjc-framework-ApplicationServices
+
+        return bool(HIServices.AXIsProcessTrusted())
+    except Exception:
+        pass
+    try:
+        import ctypes
+        import ctypes.util
+
+        path = ctypes.util.find_library("ApplicationServices")
+        if not path:
+            return None
+        lib = ctypes.cdll.LoadLibrary(path)
+        lib.AXIsProcessTrusted.restype = ctypes.c_bool
+        lib.AXIsProcessTrusted.argtypes = []
+        return bool(lib.AXIsProcessTrusted())
+    except Exception:
+        return None
+
+
+def _warn_if_untrusted_darwin() -> None:
+    """Surface the Accessibility hint once when macOS won't deliver events.
+
+    CGEventPost without Accessibility permission is dropped *silently*:
+    pynput raises nothing, every injection "succeeds", and the user sees no
+    text. Probe AXIsProcessTrusted on the first injection and notify once.
+    Non-darwin platforms never reach the probe.
+    """
+    global _trust_probe_done
+    if sys.platform != "darwin" or _trust_probe_done:
+        return
+    _trust_probe_done = True  # set first: even a crashing probe never repeats
+    try:
+        untrusted = _darwin_ax_trusted() is False  # None = unprobeable, stay quiet
+    except Exception:
+        return  # the probe is best-effort diagnostics, never break injection
+    if not untrusted:
+        return
+    try:
+        from ..notify import notify
+
+        notify("Accessibility permission missing", _ACCESSIBILITY_HINT, urgency="critical")
+    except Exception:
+        print(_ACCESSIBILITY_HINT, file=sys.stderr)
+
 
 class PynputInjector(Injector):
     """Inject keystrokes via pynput's keyboard Controller."""
@@ -41,6 +106,7 @@ class PynputInjector(Injector):
 
     def _controller(self):
         if self._kb is None:
+            _warn_if_untrusted_darwin()
             from pynput.keyboard import Controller
 
             self._kb = Controller()
@@ -58,6 +124,16 @@ class PynputInjector(Injector):
             kb = self._controller()
             segments = text.split("\n")
             for i, segment in enumerate(segments):
+                # pynput's win32 backend raises for astral (non-BMP) chars,
+                # aborting Controller.type() mid-string — which would desync
+                # StreamingTyper's last_typed mirror from the screen. We drop
+                # those chars BEFORE typing: screen and mirror then agree on
+                # everything we attempted, so returning True stays truthful.
+                # (Completeness matters less than the mirror invariant.)
+                # macOS's CGEventKeyboardSetUnicodeString handles non-BMP
+                # text fine, so darwin/X11 keep the chars.
+                if sys.platform.startswith("win"):
+                    segment = "".join(c for c in segment if ord(c) <= 0xFFFF)
                 if segment:
                     kb.type(segment)
                 if i < len(segments) - 1:

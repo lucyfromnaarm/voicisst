@@ -16,6 +16,14 @@ def test_constants() -> None:
     assert protocol.DEFAULT_PORT == 8765
 
 
+def test_audio_cap_constants() -> None:
+    # Shared request/stream size cap: int16 samples <-> bytes must agree,
+    # and the cap must hold at least 120 s of 16 kHz stereo int16 audio.
+    assert protocol.MAX_AUDIO_BYTES == 32 * 1024 * 1024
+    assert protocol.MAX_AUDIO_SAMPLES * 2 == protocol.MAX_AUDIO_BYTES
+    assert protocol.MAX_AUDIO_BYTES >= 120 * 16000 * 2 * 2
+
+
 @pytest.mark.parametrize("sr", [16000, 22050, 48000])
 @pytest.mark.parametrize("n", [160, 1601, 4801])
 def test_wav_round_trip(sr: int, n: int) -> None:

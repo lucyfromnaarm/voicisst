@@ -19,8 +19,9 @@ import pytest
 
 import flow_dictation.audio as audio_mod
 import flow_dictation.dictation as dictation_mod
-from flow_dictation.config import Config, OutputConfig, load_config
+from flow_dictation.config import AudioConfig, Config, OutputConfig, load_config
 from flow_dictation.dictation import DictationApp
+from flow_dictation.engine.base import EngineError
 from flow_dictation.hotkeys.base import HotkeyListener
 from flow_dictation.inject.base import Injector
 from helpers import FakeEngine, FakeStreamSession, make_audio
@@ -160,12 +161,16 @@ class Harness:
         self.listener: FakeListener | None = None
         self.copied: list[str] = []
         self.notices: list[tuple[str, str]] = []
+        self.beeps: list[str] = []  # beep kinds the app REQUESTED (cfg-independent)
         self.error: BaseException | None = None
 
         self.recorder_cls = recorder_class(
             LOUD if audio_arr is None else audio_arr, dur_ms, chunks
         )
         monkeypatch.setattr(audio_mod, "Recorder", self.recorder_cls)
+        monkeypatch.setattr(
+            audio_mod, "play_beep", lambda kind, enabled=True: self.beeps.append(kind)
+        )
         monkeypatch.setattr(dictation_mod.clipboard, "copy", self._copy)
         monkeypatch.setattr(
             dictation_mod.clipboard, "read_primary_selection", lambda: ""
@@ -269,16 +274,25 @@ def test_toggle_mode_press_toggles_release_ignored(app_cfg, monkeypatch):
 # rejection paths
 
 
-def test_min_record_rejected(app_cfg, monkeypatch):
-    app_cfg.audio.min_record_ms = 1000
+def test_default_min_record_ms_is_300():
+    assert AudioConfig().min_record_ms == 300
+
+
+def test_min_record_rejected_with_numbers_and_cancel_beep(app_cfg, monkeypatch):
+    app_cfg.audio.min_record_ms = 300  # the shipped default
     engine = FakeEngine(supports_stream=False)
     h = Harness(app_cfg, engine, monkeypatch, dur_ms=200.0).start()
     try:
         h.listener.on_press()
         assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
         h.listener.on_release()
-        assert wait_until(lambda: not h.recorder.is_active())
-        time.sleep(0.05)
+        assert wait_until(lambda: any(s == "too short" for s, _ in h.notices))
+        assert any(
+            "held 0.2s" in b and "minimum 0.3s" in b and "min_record_ms" in b
+            for s, b in h.notices
+            if s == "too short"
+        )
+        assert "cancel" in h.beeps  # rejection must not sound like success
         assert not any(c[0] == "transcribe" for c in engine.calls)
         assert not h.copied
     finally:
@@ -295,26 +309,85 @@ def test_muted_mic_rejected_with_hint(app_cfg, monkeypatch):
         h.listener.on_release()
         assert wait_until(lambda: any(s == "mic muted?" for s, _ in h.notices))
         assert any("pavucontrol" in b for _, b in h.notices)
+        assert "cancel" in h.beeps
         assert not any(c[0] == "transcribe" for c in engine.calls)
         assert not h.copied
     finally:
         h.finish()
 
 
-def test_rms_gate_rejected_silently(app_cfg, monkeypatch):
-    # Audible but below the gate: above muted_rms (1e-5), below rms_gate (5e-3).
-    quiet = (make_audio(2.0) * 0.005).astype(np.float32)
+def test_quiet_speech_transcribed_when_normalize_on(app_cfg, monkeypatch):
+    # Whisper-quiet: below the raw rms_gate (5e-3) but loud enough that
+    # normalize() (max_gain 30) rescues it — must NOT be rejected.
+    quiet = (make_audio(2.0) * 0.005).astype(np.float32)  # rms ~9e-4
+    assert app_cfg.audio.normalize is True
     engine = FakeEngine(supports_stream=False)
     h = Harness(app_cfg, engine, monkeypatch, audio_arr=quiet, dur_ms=2000.0).start()
     try:
         h.listener.on_press()
         assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
         h.listener.on_release()
-        assert wait_until(lambda: not h.recorder.is_active())
-        time.sleep(0.05)
+        assert wait_until(lambda: h.copied)
+        assert any(c[0] == "transcribe" for c in engine.calls)
+        assert not any(s == "too quiet" for s, _ in h.notices)
+    finally:
+        h.finish()
+
+
+def test_below_effective_gate_rejected_with_numbers(app_cfg, monkeypatch):
+    # Even normalize can't rescue this: above muted_rms (1e-5) but below
+    # rms_gate / max_gain (~1.7e-4). The reject must SAY SO with numbers.
+    too_quiet = (make_audio(2.0) * 0.0004).astype(np.float32)  # rms ~7e-5
+    engine = FakeEngine(supports_stream=False)
+    h = Harness(app_cfg, engine, monkeypatch, audio_arr=too_quiet, dur_ms=2000.0).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
+        h.listener.on_release()
+        assert wait_until(lambda: any(s == "too quiet" for s, _ in h.notices))
+        assert any(
+            "rms=" in b and "rms_gate" in b for s, b in h.notices if s == "too quiet"
+        )
+        assert "cancel" in h.beeps
         assert not any(c[0] == "transcribe" for c in engine.calls)
         assert not h.copied
         assert not any(s == "mic muted?" for s, _ in h.notices)
+    finally:
+        h.finish()
+
+
+def test_rms_gate_applies_raw_when_normalize_off(app_cfg, monkeypatch):
+    app_cfg.audio.normalize = False
+    quiet = (make_audio(2.0) * 0.005).astype(np.float32)  # rms ~9e-4 < 5e-3
+    engine = FakeEngine(supports_stream=False)
+    h = Harness(app_cfg, engine, monkeypatch, audio_arr=quiet, dur_ms=2000.0).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
+        h.listener.on_release()
+        assert wait_until(lambda: any(s == "too quiet" for s, _ in h.notices))
+        assert "cancel" in h.beeps
+        assert not any(c[0] == "transcribe" for c in engine.calls)
+        assert not h.copied
+    finally:
+        h.finish()
+
+
+def test_empty_transcript_gets_cancel_beep(app_cfg, monkeypatch):
+    class EmptyTranscriptEngine(FakeEngine):
+        def transcribe(self, audio, sample_rate, *, language=None, vocab=""):
+            super().transcribe(audio, sample_rate, language=language, vocab=vocab)
+            return "   "  # whisper heard nothing usable
+
+    engine = EmptyTranscriptEngine(supports_stream=False)
+    h = Harness(app_cfg, engine, monkeypatch).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
+        h.listener.on_release()
+        assert wait_until(lambda: "cancel" in h.beeps)
+        assert not h.copied
+        assert not any(c[0] == "polish" for c in engine.calls)
     finally:
         h.finish()
 
@@ -491,4 +564,206 @@ def test_backspace_cancels_polish_falls_back_to_raw(app_cfg, monkeypatch):
         assert "SECOND" not in h.injector.screen
         assert any(s == "polish cancelled" for s, _ in h.notices)
     finally:
+        h.finish()
+
+
+# ---------------------------------------------------------------------------
+# streaming finalize failure: the raw transcript on screen must SURVIVE
+
+
+class FailingFinalizeSession(FakeStreamSession):
+    def finalize(self, *, vocab: str = "") -> Iterator[str]:
+        raise EngineError(
+            "flow server did not finish within 120s",
+            hint="raise [engine] request_timeout",
+        )
+        yield  # pragma: no cover
+
+
+class FailingFinalizeEngine(FakeEngine):
+    def open_stream(self, sample_rate, *, language=None, vocab=""):
+        session = FailingFinalizeSession(self, sample_rate, language, vocab)
+        self.sessions.append(session)
+        return session
+
+
+def test_finalize_engine_error_keeps_raw_on_screen(app_cfg, monkeypatch, tmp_path):
+    app_cfg.output.stream = True
+    app_cfg.output.stream_tick_ms = 10
+    app_cfg.replacements = {"raw": "RAW"}  # replacements apply to the fallback
+    app_cfg.history.enabled = True
+    engine = FailingFinalizeEngine(supports_stream=True)
+    engine.scripted_partials = ["hello raw"]
+    h = Harness(app_cfg, engine, monkeypatch, chunks=(make_audio(0.3),)).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.injector.screen == "hello raw")
+        h.listener.on_release()
+        assert wait_until(
+            lambda: any(s.startswith("processing failed") for s, _ in h.notices)
+        )
+        # The user's words must never be erased on an engine failure.
+        assert wait_until(lambda: h.injector.screen == "hello RAW")
+        assert any(
+            s == "polish failed" and "raw transcript kept" in b for s, b in h.notices
+        )
+        # The fallback is recorded as the final text.
+        assert wait_until(lambda: Path(app_cfg.history.path).is_file())
+        entry = json.loads(
+            Path(app_cfg.history.path).read_text(encoding="utf-8").splitlines()[0]
+        )
+        assert entry["raw"] == "hello raw"
+        assert entry["text"] == "hello RAW"
+    finally:
+        h.finish()
+    assert h.injector.screen == "hello RAW"  # still intact after shutdown
+
+
+def test_finalize_engine_error_with_nothing_streamed_erases_nothing(app_cfg, monkeypatch):
+    # Genuinely nothing to keep: no partials ever made it to the screen.
+    app_cfg.output.stream = True
+    app_cfg.output.stream_tick_ms = 10
+    engine = FailingFinalizeEngine(supports_stream=True)
+    engine.scripted_partials = []  # no live text
+    h = Harness(app_cfg, engine, monkeypatch, chunks=(make_audio(0.3),)).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
+        h.listener.on_release()
+        assert wait_until(
+            lambda: any(s.startswith("processing failed") for s, _ in h.notices)
+        )
+        time.sleep(0.05)
+        assert h.injector.screen == ""
+        assert not h.copied
+    finally:
+        h.finish()
+
+
+# ---------------------------------------------------------------------------
+# watchdog-stop vs toggle-start race: event order must match state order
+
+
+def test_watchdog_stop_racing_toggle_start_never_double_starts(app_cfg, monkeypatch):
+    app_cfg.hotkey.mode = "toggle"
+    app_cfg.audio.auto_stop_silence_s = 0.05
+    events: list[str] = []
+
+    class TrackingRecorder:
+        def __init__(self, samplerate=16000, device=None):
+            self.chunks: list[np.ndarray] = []
+            self._active = False
+
+        def start(self):
+            events.append("DOUBLE-START" if self._active else "start")
+            # speech then 1s silence: trips the silence auto-stop watchdog
+            self.chunks = [make_audio(0.2), np.zeros(16000, dtype=np.float32)]
+            self._active = True
+
+        def stop(self):
+            self._active = False
+            events.append("stop")
+            return LOUD, 1500.0
+
+        def is_active(self):
+            return self._active
+
+        def elapsed_ms(self):
+            return 1500.0 if self._active else 0.0
+
+    engine = FakeEngine(supports_stream=False)
+    h = Harness(app_cfg, engine, monkeypatch)
+    monkeypatch.setattr(audio_mod, "Recorder", TrackingRecorder)
+
+    # Deterministic race: emulate the GIL preempting the watchdog thread
+    # between flipping _active and queue.put(EV_STOP). With the put inside
+    # _state_lock the toggle press must wait, preserving EV_STOP < EV_START.
+    real_queue = h.app._queue
+
+    class RacingQueue:
+        def put(self, item):
+            if threading.current_thread().name == "flow-watchdog":
+                time.sleep(0.08)  # the preemption window
+            real_queue.put(item)
+
+        def get(self, *a, **kw):
+            return real_queue.get(*a, **kw)
+
+    h.app._queue = RacingQueue()
+    h.start()
+    try:
+        h.listener.on_press()  # toggle: start recording
+        assert wait_until(lambda: events.count("start") == 1)
+        # Wait for the watchdog's silence auto-stop to flip _active False,
+        # then press in the inversion window (user taps to stop, but the
+        # watchdog already stopped -> the press becomes a new start).
+        assert wait_until(lambda: not h.app._active, timeout=2.0), "watchdog never fired"
+        h.listener.on_press()
+        assert wait_until(lambda: events.count("start") == 2, timeout=2.0)
+        time.sleep(0.1)
+        assert "DOUBLE-START" not in events, events
+        assert events[:3] == ["start", "stop", "start"]
+    finally:
+        h.finish()
+    assert "DOUBLE-START" not in events, events
+
+
+# ---------------------------------------------------------------------------
+# stop() during the polish window: teardown must cancel and join the worker
+
+
+class CancellableSlowSession(FakeStreamSession):
+    """finalize() blocks like a slow polish; cancel() aborts the wait
+    (cooperative, like a real session dropping its connection)."""
+
+    def __init__(self, owner, sample_rate, language, vocab):
+        super().__init__(owner, sample_rate, language, vocab)
+        self.abort = threading.Event()
+
+    def finalize(self, *, vocab: str = "") -> Iterator[str]:
+        if not self.abort.wait(timeout=20):  # pragma: no cover - cancel path
+            yield "POLISHED LATE"
+
+    def cancel(self) -> None:
+        super().cancel()
+        self.abort.set()
+
+
+class SlowCancellableEngine(FakeEngine):
+    def open_stream(self, sample_rate, *, language=None, vocab=""):
+        session = CancellableSlowSession(self, sample_rate, language, vocab)
+        self.sessions.append(session)
+        return session
+
+
+def test_stop_during_polish_cancels_session_and_joins_worker(app_cfg, monkeypatch):
+    app_cfg.output.stream = True
+    app_cfg.output.stream_tick_ms = 10
+    engine = SlowCancellableEngine(supports_stream=True)
+    engine.scripted_partials = ["hello raw"]
+    h = Harness(app_cfg, engine, monkeypatch, chunks=(make_audio(0.3),)).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.injector.screen == "hello raw")
+        h.listener.on_release()
+        assert wait_until(lambda: h.app._polishing.is_set()), "polish window never opened"
+
+        worker = h.app._worker
+        t0 = time.monotonic()
+        h.app.stop()
+        h.thread.join(timeout=4)
+        elapsed = time.monotonic() - t0
+        assert not h.thread.is_alive(), "run() did not return"
+        assert elapsed < 4.0  # did not sit out the 20s slow polish
+        assert h.error is None
+        # The session was cancelled and the worker actually exited before
+        # engine.close() ran (teardown joins, then closes).
+        assert engine.sessions[0].cancelled
+        assert worker is not None and not worker.is_alive()
+        assert engine.closed >= 1
+        # The user's words survive the shutdown (treated as a polish cancel).
+        assert h.injector.screen == "hello raw"
+        assert "POLISHED LATE" not in h.injector.screen
+    finally:
+        engine.sessions[0].abort.set()  # never strand the worker on a failure
         h.finish()

@@ -252,6 +252,41 @@ def test_silence_detector_ignores_empty_chunks() -> None:
     assert det.triggered is False
 
 
+def test_silence_detector_speech_rms_defaults_to_gate() -> None:
+    det = audio.SilenceDetector(silence_s=0.1, rms_gate=0.01, sample_rate=16000)
+    assert det.speech_rms == det.rms_gate
+    det.feed(_chunk(0.001))  # below the gate: not speech, never arms
+    det.feed(_chunk(0.0))
+    assert det.triggered is False
+
+
+def test_silence_detector_speech_rms_arms_for_whispers() -> None:
+    # Whisper-quiet speech (rms 0.001) is far below rms_gate (0.005), but a
+    # speech_rms derived from the normalize rescue potential still arms the
+    # detector so auto-stop works for quiet speakers.
+    speech_rms = 0.005 / audio.NORMALIZE_MAX_GAIN
+    det = audio.SilenceDetector(
+        silence_s=0.1, rms_gate=0.005, sample_rate=16000, speech_rms=speech_rms
+    )
+    det.feed(_chunk(0.001))  # whisper: above speech_rms, below rms_gate
+    det.feed(_chunk(0.0))  # 0.1 s trailing silence
+    assert det.triggered is True
+
+
+def test_silence_detector_whisper_speech_resets_counter() -> None:
+    speech_rms = 0.005 / audio.NORMALIZE_MAX_GAIN
+    det = audio.SilenceDetector(
+        silence_s=0.2, rms_gate=0.005, sample_rate=16000, speech_rms=speech_rms
+    )
+    det.feed(_chunk(0.001))  # whisper speech
+    det.feed(_chunk(0.0))  # 0.1 s silence banked
+    det.feed(_chunk(0.001))  # whisper again: counter resets
+    det.feed(_chunk(0.0))
+    assert det.triggered is False  # only 0.1 s since last (quiet) speech
+    det.feed(_chunk(0.0))
+    assert det.triggered is True
+
+
 # ---------------------------------------------------------------------------
 # Recorder
 
@@ -348,6 +383,39 @@ def test_recorder_start_resets_previous_chunks(fake_sd) -> None:
     rec.stop()
     rec.start()
     assert rec.chunks == []
+
+
+def test_recorder_double_start_stops_previous_stream(
+    fake_sd, capsys: pytest.CaptureFixture
+) -> None:
+    rec = audio.Recorder(16000)
+    rec.start()
+    first = fake_sd.streams[0]
+    rec.start()  # double start must never leak the live stream
+    assert first.stopped and first.closed
+    assert "already recording" in capsys.readouterr().err  # warning logged
+    assert rec.is_active()
+    second = fake_sd.streams[1]
+    assert second.started
+    # The second take is clean: only the new stream's chunks are collected.
+    second.callback(np.full((4, 1), 0.5, dtype=np.float32), 4, None, None)
+    out, _dur = rec.stop()
+    assert out.size == 4
+    assert second.stopped and second.closed
+
+
+def test_recorder_double_start_survives_broken_old_stream(fake_sd) -> None:
+    rec = audio.Recorder(16000)
+    rec.start()
+
+    def explode() -> None:
+        raise RuntimeError("PaErrorCode -9988")
+
+    fake_sd.streams[0].stop = explode  # old stream errors on stop
+    rec.start()  # must not raise; new stream still comes up
+    assert rec.is_active()
+    assert len(fake_sd.streams) == 2
+    assert fake_sd.streams[1].started
 
 
 def test_recorder_start_failure_closes_stream_and_hints(

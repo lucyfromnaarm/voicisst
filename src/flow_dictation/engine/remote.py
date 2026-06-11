@@ -6,7 +6,7 @@ import json
 import queue
 import sys
 import threading
-import urllib.parse
+import time
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -52,17 +52,21 @@ def _error_detail(r: Any) -> tuple[str, str]:
     return str(detail), ""
 
 
-def _ws_url(base: str, token: str) -> str:
+# How long open_stream() listens for an immediate error frame after `start`
+# (e.g. older servers that accept the socket before rejecting a bad token).
+_HANDSHAKE_DRAIN_S = 0.2
+
+
+def _ws_url(base: str) -> str:
+    # Note: the token travels in the Authorization header, never in the URL —
+    # query strings end up in server access logs.
     if base.startswith("https://"):
         url = "wss://" + base[len("https://") :]
     elif base.startswith("http://"):
         url = "ws://" + base[len("http://") :]
     else:
         url = "ws://" + base
-    url += "/v1/stream"
-    if token:
-        url += "?token=" + urllib.parse.quote(token, safe="")
-    return url
+    return url + "/v1/stream"
 
 
 class RemoteEngine(Engine):
@@ -230,9 +234,19 @@ class WsStreamSession(StreamSession):
         self._q: queue.Queue[dict | None] = queue.Queue()
         self._closed = False
         self._dead_reason = ""
-        url = _ws_url(base_url, token)
+        # recv() raises these when no frame arrives within the socket timeout
+        # (socket.timeout is TimeoutError since Python 3.10); a quiet gap is
+        # not an error, so the reader must survive them.
+        self._timeout_excs: tuple[type[BaseException], ...] = (
+            websocket.WebSocketTimeoutException,
+            TimeoutError,
+        )
+        url = _ws_url(base_url)
+        headers = [f"Authorization: Bearer {token}"] if token else []
         try:
-            self._ws = websocket.create_connection(url, timeout=self._timeout)
+            self._ws = websocket.create_connection(
+                url, timeout=self._timeout, header=headers
+            )
         except Exception as e:
             status = getattr(e, "status_code", None)
             if status in (401, 403):
@@ -265,11 +279,51 @@ class WsStreamSession(StreamSession):
             target=self._read_loop, daemon=True, name="flow-ws-reader"
         )
         self._reader.start()
+        self._drain_handshake_errors()
+
+    def _drain_handshake_errors(self) -> None:
+        """Fail fast when the server rejects the stream right after `start`.
+
+        Newer servers deny the upgrade outright (handled at connect time),
+        but older ones accept the socket and only then send an error frame
+        (e.g. bad token). Without this short drain the user would dictate a
+        whole utterance before finalize() surfaced the rejection.
+        """
+        deadline = time.monotonic() + _HANDSHAKE_DRAIN_S
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            try:
+                msg = self._q.get(timeout=remaining)
+            except queue.Empty:
+                return
+            if msg is None:
+                detail = f" ({self._dead_reason})" if self._dead_reason else ""
+                self.close()
+                raise EngineError(
+                    f"flow server closed the stream during the handshake{detail}",
+                    hint=_conn_hint(self._base),
+                )
+            if msg.get("type") == MSG_ERROR:
+                self.close()
+                raise EngineError(
+                    str(msg.get("message", "flow server error")),
+                    hint=str(msg.get("hint", "")) or _TOKEN_HINT,
+                )
+            # Not an error frame: keep it for finalize() and stop waiting.
+            self._q.put(msg)
+            return
 
     def _read_loop(self) -> None:
         try:
             while True:
-                frame = self._ws.recv()
+                try:
+                    frame = self._ws.recv()
+                except self._timeout_excs:
+                    if self._closed:
+                        break
+                    continue  # frame-quiet gap (user pausing): keep waiting
                 if frame is None or frame in ("", b""):
                     break  # connection closed by the server
                 if isinstance(frame, (bytes, bytearray)):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ import flow_dictation.config as config_mod
 import flow_dictation.inject as inject_mod
 import flow_dictation.selftest as selftest_mod
 import flow_dictation.server as server_mod
+import flow_dictation.tray as tray_mod
 from flow_dictation import __version__
 from flow_dictation.engine.base import EngineError
 from flow_dictation.hotkeys.evdev_listener import EvdevListener
@@ -37,6 +39,13 @@ def tmp_config_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return p
 
 
+def write_config(tmp_path: Path, text: str = "") -> Path:
+    """An existing (possibly empty) config file — --config requires one now."""
+    p = tmp_path / "config.toml"
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
 class FakeApp:
     """Stand-in for DictationApp: records its wiring, run() returns."""
 
@@ -47,13 +56,14 @@ class FakeApp:
         self.engine = engine
         self.injector = injector
         self.ran = False
+        self.stopped = False
         FakeApp.instances.append(self)
 
     def run(self) -> None:
         self.ran = True
 
     def stop(self) -> None:
-        pass
+        self.stopped = True
 
 
 @pytest.fixture
@@ -61,6 +71,38 @@ def fake_app(monkeypatch: pytest.MonkeyPatch) -> type[FakeApp]:
     FakeApp.instances = []
     monkeypatch.setattr(cli_mod, "DictationApp", FakeApp)
     return FakeApp
+
+
+class FakeThread:
+    """threading.Thread stand-in: runs its target synchronously on start()."""
+
+    instances: list[FakeThread] = []
+
+    def __init__(self, target=None, args=(), kwargs=None, name=None, daemon=None):
+        self.target = target
+        self.args = tuple(args)
+        self.kwargs = dict(kwargs or {})
+        self.name = name
+        self.daemon = daemon
+        self.started = False
+        self.joined = False
+        FakeThread.instances.append(self)
+
+    def start(self) -> None:
+        self.started = True
+        if self.target is not None:
+            self.target(*self.args, **self.kwargs)
+
+    def join(self, timeout=None) -> None:
+        self.joined = True
+
+
+@pytest.fixture
+def fake_threads(monkeypatch: pytest.MonkeyPatch) -> type[FakeThread]:
+    """Replace cli.py's view of the threading module (and only cli.py's)."""
+    FakeThread.instances = []
+    monkeypatch.setattr(cli_mod, "threading", SimpleNamespace(Thread=FakeThread))
+    return FakeThread
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +144,34 @@ def test_config_init_show_roundtrip(runner, tmp_config_path):
 
 
 # ---------------------------------------------------------------------------
+# --config validation: a typo'd path must be a hard error, never silently
+# ignored (load_config falls back to defaults for missing files).
+
+
+def test_config_option_rejects_missing_file(runner, tmp_path):
+    res = runner.invoke(cli_mod.cli, ["run", "--config", str(tmp_path / "nope.toml")])
+    assert res.exit_code == 2
+    assert "does not exist" in res.output
+    assert "nope.toml" in res.output
+
+
+def test_config_option_rejects_directory(runner, tmp_path):
+    res = runner.invoke(cli_mod.cli, ["serve", "--config", str(tmp_path)])
+    assert res.exit_code == 2
+    assert "is a directory" in res.output
+
+
+def test_main_missing_config_exits_2(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["flow", "run", "--config", str(tmp_path / "nope.toml")])
+    with pytest.raises(SystemExit) as exc:
+        cli_mod.main()
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "does not exist" in err
+    assert "Traceback" not in err
+
+
+# ---------------------------------------------------------------------------
 # run wiring
 
 
@@ -123,7 +193,7 @@ def test_run_flags_override_config(runner, fake_app, monkeypatch, tmp_path):
             "--toggle",
             "--no-stream",
             "--language", "en",
-            "--config", str(tmp_path / "missing.toml"),
+            "--config", str(write_config(tmp_path)),
         ],
     )
     assert res.exit_code == 0, res.output
@@ -143,10 +213,75 @@ def test_run_flags_override_config(runner, fake_app, monkeypatch, tmp_path):
 def test_run_stream_flag(runner, fake_app, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
     res = runner.invoke(
-        cli_mod.cli, ["run", "--stream", "--config", str(tmp_path / "missing.toml")]
+        cli_mod.cli, ["run", "--stream", "--config", str(write_config(tmp_path))]
     )
     assert res.exit_code == 0, res.output
     assert fake_app.instances[0].cfg.output.stream is True
+
+
+# ---------------------------------------------------------------------------
+# --tray threading: pystray needs the MAIN thread on macOS (AppKit), so the
+# run command inverts its arrangement there — app in a thread, tray on main.
+
+
+def test_tray_darwin_runs_tray_on_main_thread(
+    runner, fake_app, fake_threads, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    monkeypatch.setattr(sys, "platform", "darwin")
+    tray_calls: list[tuple] = []
+
+    def fake_run_tray(app, cfg):
+        tray_calls.append((app, cfg))
+
+    monkeypatch.setattr(tray_mod, "run_tray", fake_run_tray)
+    res = runner.invoke(cli_mod.cli, ["run", "--tray", "--config", str(write_config(tmp_path))])
+    assert res.exit_code == 0, res.output
+    app = fake_app.instances[0]
+    # The only spawned thread runs the app; the tray ran inline (main thread).
+    assert [t.target for t in fake_threads.instances] == [app.run]
+    assert tray_calls and tray_calls[0][0] is app
+    assert app.ran
+    assert app.stopped  # tray exit stops the app
+    assert fake_threads.instances[0].joined
+
+
+def test_tray_darwin_ctrl_c_stops_app_and_exits_cleanly(
+    runner, fake_app, fake_threads, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    def interrupted_tray(app, cfg):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(tray_mod, "run_tray", interrupted_tray)
+    res = runner.invoke(cli_mod.cli, ["run", "--tray", "--config", str(write_config(tmp_path))])
+    assert res.exit_code == 0, res.output
+    app = fake_app.instances[0]
+    assert app.stopped
+    assert fake_threads.instances[0].joined
+
+
+def test_tray_other_platforms_keep_app_on_main_thread(
+    runner, fake_app, fake_threads, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    monkeypatch.setattr(sys, "platform", "linux")
+    tray_calls: list[tuple] = []
+
+    def fake_run_tray(app, cfg):
+        tray_calls.append((app, cfg))
+
+    monkeypatch.setattr(tray_mod, "run_tray", fake_run_tray)
+    res = runner.invoke(cli_mod.cli, ["run", "--tray", "--config", str(write_config(tmp_path))])
+    assert res.exit_code == 0, res.output
+    app = fake_app.instances[0]
+    # The only spawned thread runs the tray; the app ran inline (main thread).
+    assert [t.target for t in fake_threads.instances] == [fake_run_tray]
+    assert fake_threads.instances[0].args == (app, app.cfg)
+    assert app.ran
+    assert tray_calls and tray_calls[0][0] is app
 
 
 def test_bare_invocation_defaults_to_run(runner, fake_app, monkeypatch, tmp_config_path):
@@ -170,7 +305,7 @@ def test_serve_overrides_and_calls_server(runner, monkeypatch, tmp_path):
             "--host", "0.0.0.0",
             "--port", "9001",
             "--token", "tok",
-            "--config", str(tmp_path / "missing.toml"),
+            "--config", str(write_config(tmp_path)),
         ],
     )
     assert res.exit_code == 0, res.output
@@ -190,7 +325,7 @@ def test_main_engine_error_prints_hint_and_exits_1(monkeypatch, capsys, tmp_path
 
     monkeypatch.setattr(cli_mod, "get_engine", boom)
     monkeypatch.setattr(
-        sys, "argv", ["flow", "run", "--config", str(tmp_path / "missing.toml")]
+        sys, "argv", ["flow", "run", "--config", str(write_config(tmp_path))]
     )
     with pytest.raises(SystemExit) as exc:
         cli_mod.main()
@@ -226,11 +361,81 @@ def _fake_recorder_class(samples: np.ndarray):
     return FakeRecorder
 
 
+# Keycodes for the fake evdev module (subset of real evdev.ecodes.ecodes).
+_EVDEV_CODES = {
+    "KEY_COMPOSE": 127,
+    "KEY_MENU": 139,
+    "KEY_RIGHTALT": 100,
+    "KEY_F9": 67,
+    "KEY_A": 30,
+}
+
+
+def fake_evdev_module(caps: list[int], *, name: str = "Fake Keyboard") -> types.ModuleType:
+    """An importable evdev stand-in with one device exposing keycodes `caps`."""
+    mod = types.ModuleType("evdev")
+    ecodes = SimpleNamespace(EV_KEY=1, KEY_BACKSPACE=14, ecodes=dict(_EVDEV_CODES))
+
+    class InputDevice:
+        def __init__(self, path: str):
+            self.path = path
+            self.fd = 99
+            self.name = name
+
+        def capabilities(self):
+            return {ecodes.EV_KEY: list(caps)}
+
+        def close(self):
+            pass
+
+    mod.ecodes = ecodes
+    mod.InputDevice = InputDevice
+    mod.list_devices = lambda: ["/dev/input/event0"]
+    return mod
+
+
+class FakeResponse:
+    def __init__(self, payload=None, status=200):
+        self._payload = payload or {}
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._payload
+
+
+def fake_requests_module(get) -> types.ModuleType:
+    """A requests stand-in whose get() is the supplied callable."""
+    mod = types.ModuleType("requests")
+    mod.get = get
+    return mod
+
+
 @pytest.fixture
 def selftest_env(monkeypatch: pytest.MonkeyPatch):
-    """Fake out every hardware probe the selftest touches."""
+    """Fake out every hardware/network probe the selftest touches.
+
+    The fake evdev exposes the default Linux hotkeys; the fake requests
+    serves an ollama /api/tags listing that contains the default model.
+    """
     monkeypatch.setattr(EvdevListener, "available", classmethod(lambda cls: True))
     monkeypatch.setattr(PynputListener, "available", classmethod(lambda cls: True))
+    monkeypatch.setitem(
+        sys.modules,
+        "evdev",
+        fake_evdev_module([_EVDEV_CODES["KEY_COMPOSE"], _EVDEV_CODES["KEY_MENU"]]),
+    )
+    default_model = config_mod.PolishConfig().model
+    monkeypatch.setitem(
+        sys.modules,
+        "requests",
+        fake_requests_module(
+            lambda url, timeout=None: FakeResponse({"models": [{"name": default_model}]})
+        ),
+    )
     monkeypatch.setattr(audio_mod, "Recorder", _fake_recorder_class(make_audio(0.1)))
     monkeypatch.setattr(inject_mod, "get_injector", lambda cfg: SimpleNamespace(name="fake"))
     monkeypatch.setattr(clipboard_mod, "copy", lambda text: True)
@@ -265,3 +470,135 @@ def test_selftest_skips_polish_when_disabled(selftest_env, tmp_path, capsys):
     rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
     assert rc == 0
     assert "SKIP" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# selftest: polish backend probe (engines swallow polish failures at runtime,
+# so the round-trip alone can never fail — the probe must).
+
+
+def test_selftest_polish_fails_when_ollama_down(selftest_env, monkeypatch, tmp_path, capsys):
+    def dead_get(url, timeout=None):
+        raise ConnectionError("connection refused")
+
+    monkeypatch.setitem(sys.modules, "requests", fake_requests_module(dead_get))
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "ollama not running" in err
+    assert "systemctl status ollama" in err
+
+
+def test_selftest_polish_fails_when_model_missing(selftest_env, monkeypatch, tmp_path, capsys):
+    monkeypatch.setitem(
+        sys.modules,
+        "requests",
+        fake_requests_module(
+            lambda url, timeout=None: FakeResponse({"models": [{"name": "other:1b"}]})
+        ),
+    )
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "model not pulled" in err
+    assert f"ollama pull {cfg.polish.model}" in err
+
+
+def test_selftest_polish_fails_when_text_comes_back_unchanged(selftest_env, tmp_path, capsys):
+    class EchoPolishEngine(FakeEngine):
+        def polish(self, text, *, language=None, vocab=""):
+            return text  # exactly what a swallowed backend failure looks like
+
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    rc = selftest_mod.run_selftest(cfg, engine=EchoPolishEngine(), audio_seconds=0.01)
+    assert rc == 1
+    assert "unchanged" in capsys.readouterr().err
+
+
+def test_selftest_polish_passes_when_model_present_and_text_changes(
+    selftest_env, tmp_path, capsys
+):
+    # The selftest_env fixture serves tags containing the configured model,
+    # and FakeEngine.polish prefixes its input — both probe and round-trip OK.
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
+    assert rc == 0
+    assert "sample:" in capsys.readouterr().err
+
+
+def test_selftest_polish_openai_backend_unreachable(selftest_env, monkeypatch, tmp_path, capsys):
+    def dead_get(url, timeout=None):
+        raise ConnectionError("connection refused")
+
+    monkeypatch.setitem(sys.modules, "requests", fake_requests_module(dead_get))
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    cfg.polish.backend = "openai"
+    cfg.polish.url = "http://localhost:9999/v1"
+    rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "unreachable" in err
+    assert "polish.url" in err
+
+
+def test_selftest_polish_remote_mode_skips_local_probe(selftest_env, monkeypatch, tmp_path, capsys):
+    def must_not_be_called(url, timeout=None):
+        raise AssertionError("local polish probe must not run in remote mode")
+
+    monkeypatch.setitem(sys.modules, "requests", fake_requests_module(must_not_be_called))
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    cfg.engine.mode = "remote"
+    cfg.engine.server_url = "http://big-box:8765"
+    rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
+    assert rc == 0, capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# selftest: hotkey device check (a readable /dev/input is not enough — some
+# keyboard must actually expose the configured keycodes).
+
+
+def test_selftest_hotkey_fails_when_no_device_exposes_key(
+    selftest_env, monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setitem(sys.modules, "evdev", fake_evdev_module([_EVDEV_CODES["KEY_A"]]))
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    cfg.hotkey.backend = "evdev"
+    cfg.hotkey.keys = ["KEY_COMPOSE", "KEY_MENU"]
+    rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "no keyboard exposes KEY_COMPOSE, KEY_MENU" in err
+    assert "KEY_RIGHTALT" in err
+    assert "python -m evdev.evtest" in err
+
+
+def test_selftest_hotkey_passes_when_device_exposes_key(
+    selftest_env, monkeypatch, tmp_path, capsys
+):
+    monkeypatch.setitem(sys.modules, "evdev", fake_evdev_module([_EVDEV_CODES["KEY_F9"]]))
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    cfg.hotkey.backend = "evdev"
+    cfg.hotkey.keys = ["KEY_F9"]
+    rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
+    assert rc == 0
+    assert "expose [KEY_F9]" in capsys.readouterr().err
+
+
+def test_selftest_hotkey_permission_error_mentions_input_group(
+    selftest_env, monkeypatch, tmp_path, capsys
+):
+    mod = fake_evdev_module([_EVDEV_CODES["KEY_COMPOSE"]])
+
+    def denied():
+        raise PermissionError("/dev/input/event0: permission denied")
+
+    mod.list_devices = denied
+    monkeypatch.setitem(sys.modules, "evdev", mod)
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    cfg.hotkey.backend = "evdev"
+    rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
+    assert rc == 1
+    assert "usermod -aG input" in capsys.readouterr().err

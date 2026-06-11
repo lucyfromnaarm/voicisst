@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -150,7 +151,31 @@ class PynputListener(HotkeyListener):
                 hint="set hotkey.keys to pynput names like \"alt_r\", \"ctrl_r\", \"f9\" "
                 "or single characters",
             )
+        if sys.platform == "win32":
+            self._add_win32_altgr_companion(resolved)
         return resolved
+
+    @classmethod
+    def _add_win32_altgr_companion(cls, resolved: list[Any]) -> None:
+        """Watch alt_gr alongside alt_r on Windows (and vice versa).
+
+        pynput's win32 listener maps vk 0xA5 (right Alt) to Key.alt_gr —
+        Key.alt_gr is defined after Key.alt_r with the same vk, so it wins
+        in Listener._SPECIAL_KEYS. A configured 'alt_r' would therefore
+        never fire; watching both keys makes either name work.
+        """
+        from pynput.keyboard import Key
+
+        alt_r = getattr(Key, "alt_r", None)
+        alt_gr = getattr(Key, "alt_gr", None)
+        if alt_r is None or alt_gr is None:
+            return
+        has_alt_r = cls._contains(resolved, alt_r)
+        has_alt_gr = cls._contains(resolved, alt_gr)
+        if has_alt_r and not has_alt_gr:
+            resolved.append(alt_gr)
+        elif has_alt_gr and not has_alt_r:
+            resolved.append(alt_r)
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -170,6 +195,38 @@ class PynputListener(HotkeyListener):
         )
         listener.start()
         self._listener = listener
+        if sys.platform == "darwin":
+            self._warn_if_untrusted_darwin(listener)
+
+    def _warn_if_untrusted_darwin(self, listener: Any) -> None:
+        """Surface a macOS Input-Monitoring denial, which pynput swallows.
+
+        Without the permission, pynput's darwin listener thread fails to
+        create its event tap and exits silently — hotkeys would just never
+        fire. The listener thread sets IS_TRUSTED (HIServices.
+        AXIsProcessTrusted via pynput._util.darwin) early in its run loop,
+        before marking itself ready; wait briefly for that, then warn.
+        """
+        deadline = time.monotonic() + 2.0
+        while not getattr(listener, "_ready", True):
+            alive = getattr(listener, "is_alive", None)
+            if (callable(alive) and not alive()) or time.monotonic() > deadline:
+                break
+            time.sleep(0.01)
+        if getattr(listener, "IS_TRUSTED", True):
+            return
+        summary = "flow hotkeys: macOS denied Input Monitoring"
+        body = (
+            "grant your terminal/app permission in System Settings -> "
+            "Privacy & Security -> Input Monitoring, then restart flow"
+        )
+        print(f"{summary} — {body}", file=sys.stderr)
+        try:
+            from ..notify import notify
+
+            notify(summary, body, urgency="critical")
+        except Exception as e:
+            print(f"flow hotkeys: notification failed: {e}", file=sys.stderr)
 
     def stop(self) -> None:
         listener, self._listener = self._listener, None
@@ -196,7 +253,17 @@ class PynputListener(HotkeyListener):
                 return key
         return key
 
-    def _handle_press(self, key: Any) -> None:
+    # NOTE on the `injected` parameter: pynput >= 1.8 wraps callbacks with
+    # Listener._wrap(f, 2) and — when the callback accepts two arguments —
+    # passes (key, injected) positionally, where `injected` is True for
+    # events synthesized by software (e.g. Flow's own backspaces during
+    # streaming polish). Those must be ignored, or our injected backspaces
+    # would self-cancel the polish. The default value keeps the signature
+    # compatible with older pynput, which passes only `key`.
+
+    def _handle_press(self, key: Any, injected: bool = False) -> None:
+        if injected:  # our own synthetic keystrokes must not trigger hotkeys
+            return
         if key is None:  # pynput reports unknown keys as None
             return
         k = self._canon(key)
@@ -215,7 +282,9 @@ class PynputListener(HotkeyListener):
             self._holder = k
             self._safe(self.on_press)
 
-    def _handle_release(self, key: Any) -> None:
+    def _handle_release(self, key: Any, injected: bool = False) -> None:
+        if injected:
+            return
         if key is None:
             return
         k = self._canon(key)
