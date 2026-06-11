@@ -31,7 +31,7 @@ const SCHEMA = {
   },
   "polish": {
     "label": "Polish (LLM cleanup)",
-    "intro": "Tidies your words: fillers out, self-corrections applied, punctuation added.",
+    "intro": "Cleans up what you said — the \"um\"s disappear and your self-corrections get applied.",
     "when": {"engine.mode": "local"},
     "fields": [
       {"key": "enabled", "label": "Polish my words", "type": "bool", "default": true, "help": "Turn the LLM cleanup on or off. Off keeps the raw transcript."},

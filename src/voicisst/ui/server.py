@@ -23,6 +23,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 import numpy as np
 
@@ -815,7 +816,11 @@ def create_ui_app(
                     if backend == "lmstudio" and base == OLLAMA_DEFAULT_URL:
                         base = LMSTUDIO_DEFAULT_URL
                     headers = {}
-                    if cfg.polish.api_key:
+                    # The API key only ever goes to the host saved in the
+                    # config — never to a host supplied by the request, or a
+                    # crafted ?url= could walk off with the key.
+                    configured_host = urlsplit((cfg.polish.url or "").strip()).netloc
+                    if cfg.polish.api_key and urlsplit(base).netloc == configured_host:
                         headers["Authorization"] = f"Bearer {cfg.polish.api_key}"
                     r = requests.get(f"{base}/v1/models", timeout=5, headers=headers)
                     r.raise_for_status()

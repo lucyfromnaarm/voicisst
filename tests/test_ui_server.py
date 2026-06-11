@@ -906,6 +906,28 @@ def test_polish_models_respects_query_url(
     assert calls == ["http://big-box:11434/api/tags"]
 
 
+def test_polish_models_never_sends_api_key_to_request_supplied_host(
+    cfg: Config, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg.polish.api_key = "sk-secret"
+    seen_headers: list[dict] = []
+
+    def fake_get(url: str, **kw: Any) -> _FakeModelsResponse:
+        seen_headers.append(kw.get("headers") or {})
+        return _FakeModelsResponse({"data": []})
+
+    monkeypatch.setattr("requests.get", fake_get)
+    client = make_client(cfg, config_file=config_file)
+    # Host from the query string, not the config: the key must stay home.
+    client.get("/api/polish/models?backend=openai&url=http://attacker.example")
+    assert seen_headers == [{}]
+
+    # Same host as the configured polish.url: the key goes along as normal.
+    cfg.polish.url = "http://localhost:11434"
+    client.get("/api/polish/models?backend=openai&url=http://localhost:11434")
+    assert seen_headers[1].get("Authorization") == "Bearer sk-secret"
+
+
 def test_polish_models_backend_down_gives_hint(
     cfg: Config, config_file: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
