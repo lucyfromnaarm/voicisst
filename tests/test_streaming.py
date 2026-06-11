@@ -297,7 +297,10 @@ def test_tick_loop_skips_none_but_honors_empty(partial_value):
     typer, inj = make_typer(items=["abc", partial_value])
     typer.start()
     try:
-        assert wait_until(lambda: typer.last_typed == "abc")
+        # Wait on the permanent ops log, not last_typed: on a slow runner
+        # two ticks can land between polls and the "abc" state is transient
+        # in the partial_value="" case.
+        assert wait_until(lambda: ("type", "abc") in inj.ops)
         if partial_value is None:
             time.sleep(0.05)
             assert typer.last_typed == "abc"  # None = unchanged, keep text
