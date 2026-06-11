@@ -60,11 +60,27 @@ any reason, Flow delivers the raw transcript instead and tells you why.
 | `keep_alive` | `"30m"` | How long Ollama keeps the model loaded after a request. |
 | `num_ctx` | `8192` | Context window passed to the backend. |
 | `num_predict` | `2048` | Max tokens the polisher may generate. |
-| `think` | `true` | Allow "thinking" models to reason before answering. `<think>` blocks are stripped from the output. |
-| `think_min_chars` | `100` | Skip thinking for inputs shorter than this — short utterances don't benefit and thinking adds latency. |
+| `think` | `false` | Allow "thinking" models to reason before answering. Off by default: thinking adds many seconds of latency per utterance, and the polish task rarely needs it. Opt in for long-form quality if you like. |
+| `think_min_chars` | `100` | Even with `think = true`, skip thinking for inputs shorter than this — short utterances don't benefit. |
 | `num_gpu` | `-1` | Ollama `num_gpu` option (layers to offload). `-1` lets the backend decide. |
 | `timeout` | `60.0` | Per-request timeout in seconds. Raise it if your model is slow to cold-start. |
 | `vram_unload_below_mb` | `0` | When `> 0`, a watchdog polls `nvidia-smi` every 60s and unloads the polish model from Ollama if free VRAM drops below this many MB — so a game or training run can have the memory. The model reloads on the next dictation. `0` disables. |
+
+### How think mode is negotiated
+
+Ollama models differ in how thinking is switched off, so the Ollama backend
+negotiates it on the first request:
+
+- Ollama-native thinking models (qwen3.5, deepseek-r1, ...) honor the
+  `think` API field. Flow always sends it — without `think: false` these
+  models burn the whole `num_predict` budget on a separate thinking channel
+  and return an *empty* response.
+- Models pulled straight from Hugging Face as GGUFs have no thinking
+  template and reject the `think` field with a 400. Flow detects that once,
+  then falls back to appending a `/no_think` marker to the prompt instead.
+
+Either way, any `<think>...</think>` blocks that leak into the output are
+stripped before the text reaches your screen.
 
 ## [hotkey]
 
@@ -80,8 +96,8 @@ Which names are valid depends on the backend that ends up listening:
 
 - **evdev** (Linux): kernel key names like `KEY_MENU`, `KEY_COMPOSE`,
   `KEY_RIGHTALT`, `KEY_RIGHTCTRL`, `KEY_F9`, `KEY_CAPSLOCK`. The full list is
-  in `/usr/include/linux/input-event-codes.h`, or run `sudo evtest` and press
-  the key you want.
+  in `/usr/include/linux/input-event-codes.h`, or run `python -m evdev.evtest`
+  and press the key you want.
 - **pynput** (macOS, Windows, Linux fallback): pynput names like `alt_r`,
   `ctrl_r`, `cmd_r`, `shift_r`, `f9`, `menu`, or a single character like
   `"a"`.
@@ -110,7 +126,7 @@ names produce a warning rather than an error.
 | `mode` | `"paste"` | `"paste"` copies the text and sends the paste shortcut (fast, layout-proof). `"type"` sends individual keystrokes. |
 | `stream` | `false` | Live-type the raw transcript while you speak, then replace it with the polished text. Pressing Backspace during the polish window cancels polish and keeps the raw transcript. |
 | `stream_tick_ms` | `600` | How often streaming mode re-transcribes the audio so far. |
-| `key_delay_ms` | `0` | Inter-key delay for the typing backend (ydotool `--key-delay`). |
+| `key_delay_ms` | `0` | Inter-key delay for the typing backend (ydotool `--key-delay`, xdotool `--delay`). |
 | `key_hold_ms` | `0` | Key hold time (ydotool `--key-hold`); `0` = backend default. |
 | `paste_chord` | `"auto"` | Paste shortcut: `"auto"` (Ctrl+V, or Cmd+V on macOS) \| `"ctrl-v"` \| `"ctrl-shift-v"` \| `"cmd-v"`. |
 | `newline_mode` | `"shift-enter"` | How `\n` is typed: `"shift-enter"` keeps chat apps (Slack, Discord, Claude) from treating each newline as "send". `"enter"` sends plain Enter. |

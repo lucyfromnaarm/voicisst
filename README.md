@@ -40,7 +40,7 @@ or with pipx / uv:
 pipx install "flow-dictation[local]"     # or: uv tool install "flow-dictation[local]"
 ollama pull qwen3.5:4b                   # the default polish model
 flow selftest                            # checks mic, models, hotkeys, typing
-flow
+flow run                                 # (bare `flow` does the same)
 ```
 
 On Linux, run `scripts/setup-linux.sh` once first — it installs ydotool, sets up the uinput permissions and the `input` group, and installs user systemd units. Details in [docs/PLATFORMS.md](docs/PLATFORMS.md).
@@ -50,6 +50,8 @@ On Linux, run `scripts/setup-linux.sh` once first — it installs ydotool, sets 
 ```powershell
 irm https://raw.githubusercontent.com/lucyfromnaarm/flow-dictation/main/scripts/install.ps1 | iex
 ```
+
+or `pipx install "flow-dictation[local]"`, then `flow selftest` and `flow run` as above.
 
 **Prebuilt binaries**
 
@@ -71,14 +73,20 @@ all-in-one: flow run                      split: flow serve  +  flow run --serve
 
 1. **All-in-one** — `flow run` (or just `flow`): capture, transcribe, polish, and inject, all on one machine.
 2. **Server** — `flow serve` on the GPU box exposes transcription and polish over HTTP + WebSocket.
-3. **Client** — `flow run --server http://desktop:8765` on the laptop: audio capture and typing stay local, inference happens on the server.
+3. **Client** — `flow run --server URL` on the laptop: audio capture and typing stay local, inference happens on the server.
+
+```bash
+flow serve --host 0.0.0.0 --token <secret>            # on the big machine
+flow run --server http://big-box:8765 --token <secret> # on the laptop
+```
 
 Server setup, the API, and the security model are in [docs/SERVER.md](docs/SERVER.md).
 
 ## Requirements
 
-- A GPU is recommended: the defaults (Whisper `large-v3-turbo` plus a 4B polish model) fit comfortably in about 8 GB of VRAM.
-- CPU-only works too: Flow auto-selects the `small` Whisper model on CPU. Polish on CPU is slower; disable it with `polish.enabled = false` if the latency annoys you.
+- A GPU is recommended: the defaults (Whisper `large-v3-turbo` plus a ~4B polish model) fit comfortably in about 8 GB of VRAM.
+- CPU-only works too: Flow auto-selects the `small` Whisper model on CPU.
+- Polish needs [Ollama](https://ollama.com) (`ollama pull qwen3.5:4b`) or any OpenAI-compatible server (llama.cpp, vLLM, LM Studio, ...) — or set `polish.backend = "none"` to skip it entirely.
 - Python 3.10+ for pip/pipx installs. The release binaries bundle everything.
 
 ## Configuration

@@ -22,9 +22,9 @@ cross-platform rewrite.
   fillers, applies self-corrections ("at 2... actually 3" → "at 3"), turns
   spoken enumerations into numbered Markdown lists, punctuates, and answers
   in the input language. Falls back to the raw transcript on any failure.
-- Hybrid thinking mode for reasoning models (skipped below a configurable
-  input length) and a VRAM watchdog that unloads the polish model when free
-  GPU memory runs low.
+- Opt-in thinking mode for reasoning models (off by default; skipped below a
+  configurable input length even when on) and a VRAM watchdog that unloads
+  the polish model when free GPU memory runs low.
 - Output injection: ydotool (Wayland), xdotool (X11), pynput
   (macOS/Windows); paste or per-keystroke type modes, Shift+Enter newline
   handling for chat apps, terminal detection with copy + notify instead of
