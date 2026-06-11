@@ -40,7 +40,7 @@ def strip_think(s: str) -> str:
 
 def common_prefix_len(a: str, b: str) -> int:
     i = 0
-    for ca, cb in zip(a, b):
+    for ca, cb in zip(a, b, strict=False):
         if ca != cb:
             return i
         i += 1

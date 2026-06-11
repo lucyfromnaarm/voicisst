@@ -31,7 +31,7 @@ class StreamSession(ABC):
     """
 
     @abstractmethod
-    def feed(self, chunk: "np.ndarray") -> None:
+    def feed(self, chunk: np.ndarray) -> None:
         """Append a float32 mono chunk of the in-progress utterance."""
 
     @abstractmethod
@@ -64,7 +64,7 @@ class Engine(ABC):
     @abstractmethod
     def transcribe(
         self,
-        audio: "np.ndarray",
+        audio: np.ndarray,
         sample_rate: int,
         *,
         language: str | None = None,
@@ -96,8 +96,8 @@ class Engine(ABC):
         """Status info: {"status", "version", "mode", "whisper_model", ...}.
         Raises EngineError when the engine is unreachable/broken."""
 
-    def warm(self) -> None:
+    def warm(self) -> None:  # noqa: B027 — optional hook, default no-op
         """Preload models so the first utterance is fast. Best-effort."""
 
-    def close(self) -> None:
+    def close(self) -> None:  # noqa: B027 — optional hook, default no-op
         """Release resources. Idempotent."""
