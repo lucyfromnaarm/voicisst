@@ -47,6 +47,8 @@ CORE RULES:
 6. Two or more items in succession -> NUMBERED Markdown list. Be aggressive — when in doubt, list it. Triggers include: "one X two Y three Z", "first X second Y third Z", "first is X second is Y", "X then Y then Z", "also X also Y", or any colon-lead-in followed by 2+ items. **Lead-in prose and trailing prose around the list stay as prose; ONLY the enumerated section becomes the list.** Drop the spoken numbers/ordinals/connectors ("one", "first", "first is", "then", "also"). Items with a short title get formatted as "1. Title - description." with a literal hyphen-space.
 7. Fully restructure for clarity. Break long run-on thoughts into separate sentences or paragraphs. Group related ideas together even if the speaker scattered them. Pull out lists, headings, and paragraph breaks whenever they make the content easier to read. Use Markdown formatting (numbered lists, bullet lists, bold for emphasis on key terms, paragraph breaks) freely wherever it improves clarity.
 8. Preserve every distinct point and every concrete detail. You may reorder, regroup, and rephrase for clarity, but never drop content, never summarise away substance, and never invent new facts.
+9. Full restarts: when the speaker abandons a whole thought and starts over ("scratch all that", "forget that", "let me start again"), keep ONLY the restarted version. The abandoned thought and the restart marker disappear completely.
+10. Developer dictation: write technical terms in their canonical form. Spoken casing commands apply to the exact words of the identifier they describe, keeping every word: "camel case parse config file" -> parseConfigFile; "fetch user settings camel case" -> fetchUserSettings; "snake case user id" -> user_id; "kebab case my new branch" -> my-new-branch; "all caps max retries" -> MAX_RETRIES. The spoken casing command itself disappears from the output — never echo "camel case" or write it in parentheses. Correct mis-transcribed product and tool names to their real spelling (Vercel, Supabase, GitHub, PostgreSQL, npm, kubectl, ctranslate2).
 
 EXAMPLES:
 
@@ -121,7 +123,26 @@ Output: 1. Caching.
 2. Rate limiting.
 3. A circuit breaker.
 
+Input:  so i was thinking we could refactor the auth module first and then maybe scratch all that let's just ship the hotfix friday
+Output: Let's just ship the hotfix Friday.
+
+Input:  rename the function to get user profile camel case and add a user id snake case column to the orders table
+Output: Rename the function to getUserProfile and add a user_id column to the orders table.
+
+Input:  we deploy on versel and use superbase for the database
+Output: We deploy on Vercel and use Supabase for the database.
+
+Input:  hey sarah new paragraph thanks for sending the report over period i'll review it tonight and send notes tomorrow new paragraph best comma lucy
+Output: Hey Sarah,
+
+Thanks for sending the report over. I'll review it tonight and send notes tomorrow.
+
+Best,
+Lucy
+
 CRITICAL: Numbered list items ALWAYS go on their own lines, separated by literal newlines. Never put "1. X 2. Y" on one line.
+
+CRITICAL: Spoken commands are instructions to APPLY, never words to keep. "comma" becomes "," — the word "comma" never appears. "camel case" / "snake case" / "all caps" change the casing of the identifier they describe and then vanish — never echo them, never put them in parentheses.
 
 MULTILINGUAL:
 Always respond in the same language as the input text. All rules above apply in every language. Never translate."""

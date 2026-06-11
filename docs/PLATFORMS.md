@@ -27,9 +27,10 @@ The script is idempotent and works on dnf/apt/pacman/zypper distros. It:
 3. writes a udev rule giving the `input` group access to `/dev/uinput`
    (`KERNEL=="uinput", GROUP="input", MODE="0660"`);
 4. adds you to the `input` group;
-5. installs *user* systemd units for `ydotoold` and Flow — a user-level
+5. installs and starts a *user* systemd unit for `ydotoold` — a user-level
    `ydotoold` keeps its socket in your `XDG_RUNTIME_DIR` instead of a
-   root-owned `/tmp` socket you can't use.
+   root-owned `/tmp` socket you can't use (it disables a system-wide
+   `ydotoold` if one is enabled).
 
 **Log out and back in** after the script adds you to the `input` group;
 group membership only applies to new sessions.
@@ -38,10 +39,21 @@ Then:
 
 ```bash
 flow selftest
-flow                                          # run in the foreground first
-systemctl --user enable --now flow            # when you're happy
+flow run                                      # run in the foreground first
+```
+
+To start Flow at login, install the user unit from `packaging/systemd/`
+(the script prints these exact commands when it finishes):
+
+```bash
+install -Dm0644 packaging/systemd/flow.service ~/.config/systemd/user/flow.service
+systemctl --user daemon-reload
+systemctl --user enable --now flow.service
 journalctl --user -u flow -f                  # watch the logs
 ```
+
+The unit expects `flow` at `~/.local/bin/flow` (the pipx/uv default) — edit
+`ExecStart` if `command -v flow` says yours lives elsewhere.
 
 ### Wayland notes
 
@@ -108,9 +120,14 @@ Terminal.app and later run Flow from iTerm2, you'll grant it again. After
 changing a permission, restart Flow.
 
 To start Flow at login, use the LaunchAgent template at
-`packaging/macos/com.flowdictation.flow.plist`: copy it to
-`~/Library/LaunchAgents/` and run
-`launchctl load ~/Library/LaunchAgents/com.flowdictation.flow.plist`.
+`packaging/macos/com.flowdictation.flow.plist` (it runs
+`~/.local/bin/flow run` and logs to `~/Library/Logs/flow.log`):
+
+```bash
+cp packaging/macos/com.flowdictation.flow.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.flowdictation.flow.plist
+# older macOS: launchctl load -w ~/Library/LaunchAgents/com.flowdictation.flow.plist
+```
 
 ## Windows
 

@@ -8,7 +8,8 @@ and accessibility feedback are all wanted.
 ```bash
 git clone https://github.com/lucyfromnaarm/flow-dictation
 cd flow-dictation
-uv venv && source .venv/bin/activate       # plain python -m venv works too
+uv venv --python 3.12 .venv
+source .venv/bin/activate                  # plain python -m venv works too
 uv pip install -e ".[all,dev]"             # or: pip install -e ".[all,dev]"
 
 pytest                                      # must pass headless

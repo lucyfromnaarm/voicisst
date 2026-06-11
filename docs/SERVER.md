@@ -39,7 +39,9 @@ The server warms its models at startup, so the first dictation isn't slow.
   from other machines until you change `server.host`.
 - **Token auth.** Set a token on both ends and every REST request must send
   `Authorization: Bearer <token>`; the WebSocket passes it as a `?token=`
-  query parameter. Wrong or missing token → 401. Generate one with
+  query parameter (a Bearer header works there too). Wrong or missing token
+  → HTTP 401 (the WebSocket gets an `error` frame and close code 4401).
+  Generate one with
   `python -c "import secrets; print(secrets.token_hex(32))"`.
 - **LAN exposure.** `flow serve --host 0.0.0.0` opens the API to your
   network. Anyone who can reach the port can run transcription jobs on your
@@ -91,8 +93,9 @@ JSON. Protocol version 1; default port 8765.
 ### Authentication
 
 When the server has a token: REST requests need
-`Authorization: Bearer <token>`, the WebSocket needs `?token=<token>`.
-Otherwise the server responds 401.
+`Authorization: Bearer <token>`, the WebSocket needs `?token=<token>` (or
+the same Bearer header). REST without it gets a 401; the WebSocket gets an
+`error` frame and close code 4401.
 
 ### REST endpoints
 

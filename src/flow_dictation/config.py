@@ -89,7 +89,9 @@ class HotkeyConfig:
 class AudioConfig:
     sample_rate: int = 16000
     input_device: str = ""  # "" = system default; name or index
-    min_record_ms: int = 1000
+    # Short enough that quick commands ("yes period") survive; the RMS gate
+    # already filters accidental taps.
+    min_record_ms: int = 300
     max_record_ms: int = 120000
     muted_rms: float = 0.00001
     rms_gate: float = 0.005
@@ -248,6 +250,13 @@ def _field_types(section_cls: type) -> dict[str, type]:
     return out
 
 
+def _suggest(name: str, candidates: list[str]) -> str:
+    import difflib
+
+    close = difflib.get_close_matches(name, candidates, n=1)
+    return f" (did you mean {close[0]!r}?)" if close else ""
+
+
 def _set_dotted(cfg: Config, dotted: str, value: object) -> None:
     """Set e.g. 'whisper.model' on cfg, coercing the value."""
     section_name, _, key = dotted.partition(".")
@@ -257,10 +266,14 @@ def _set_dotted(cfg: Config, dotted: str, value: object) -> None:
         return
     section_cls = _SECTIONS.get(section_name)
     if section_cls is None or not key:
+        hint = _suggest(section_name, [*_SECTIONS, "replacements"])
+        print(f"flow config: unknown section {section_name!r}{hint}", file=sys.stderr)
         return
     section = getattr(cfg, section_name)
     types = _field_types(section_cls)
     if key not in types:
+        hint = _suggest(key, list(types))
+        print(f"flow config: unknown key {dotted!r}{hint}", file=sys.stderr)
         return
     try:
         setattr(section, key, _coerce(value, types[key]))
@@ -347,7 +360,7 @@ keys = [{hotkeys}]
 mode = "hold"             # "hold" = push-to-talk | "toggle" = tap to start/stop
 
 [audio]
-min_record_ms = 1000
+min_record_ms = 300
 max_record_ms = 120000
 auto_stop_silence_s = 0.0 # >0: auto-stop after N seconds of silence (hands-free)
 normalize = true          # boost quiet/whispered speech

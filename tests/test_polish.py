@@ -140,6 +140,23 @@ def test_prompt_critical_line() -> None:
     )
 
 
+def test_prompt_developer_dictation_rules() -> None:
+    assert "parseConfigFile" in POLISH_SYSTEM_PROMPT  # casing commands
+    assert "fetchUserSettings" in POLISH_SYSTEM_PROMPT
+    assert "user_id" in POLISH_SYSTEM_PROMPT
+    assert "MAX_RETRIES" in POLISH_SYSTEM_PROMPT
+    assert "Vercel" in POLISH_SYSTEM_PROMPT  # canonical tool spelling
+    assert "Supabase" in POLISH_SYSTEM_PROMPT
+
+
+def test_prompt_full_restart_rule_and_examples() -> None:
+    assert "scratch all that" in POLISH_SYSTEM_PROMPT
+    assert "Let's just ship the hotfix Friday." in POLISH_SYSTEM_PROMPT
+    assert "getUserProfile" in POLISH_SYSTEM_PROMPT
+    # email formatting example
+    assert "Thanks for sending the report over." in POLISH_SYSTEM_PROMPT
+
+
 def test_prompt_multilingual_section_after_critical() -> None:
     assert "Always respond in the same language as the input text." in POLISH_SYSTEM_PROMPT
     assert "All rules above apply in every language." in POLISH_SYSTEM_PROMPT
