@@ -1,0 +1,129 @@
+name: Release
+
+# Triggered by version tags (v0.1.0, v1.2.3, ...). Builds:
+#   1. sdist + wheel
+#   2. standalone PyInstaller binaries for Linux/macOS(x86_64+arm64)/Windows
+#   3. a GitHub Release with all artifacts + SHA256SUMS.txt
+#   4. (optional) a PyPI upload when the PYPI_API_TOKEN secret is configured
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install build
+        run: python -m pip install build
+      - name: Build sdist and wheel
+        run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+
+  binaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux
+            arch: x86_64
+          - os: macos-13
+            platform: macos
+            arch: x86_64
+          - os: macos-14
+            platform: macos
+            arch: arm64
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PortAudio (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+      - name: Install package and PyInstaller
+        run: pip install '.[local,server]' pyinstaller
+      - name: Build binary
+        run: pyinstaller --noconfirm packaging/pyinstaller/flow.spec
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        # GITHUB_REF_NAME is the tag, e.g. v0.1.0 -> VERSION 0.1.0
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar -C dist -czf "flow-${VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" flow
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          Compress-Archive -Path dist/flow -DestinationPath "flow-$version-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            flow-*.tar.gz
+            flow-*.zip
+          if-no-files-found: error
+
+  release:
+    needs: [build-dist, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Generate checksums
+        run: |
+          cd assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true
+
+  pypi:
+    needs: build-dist
+    runs-on: ubuntu-latest
+    steps:
+      # The secrets context is unavailable in job-level `if`, so gate every
+      # step on an output computed from the secret instead. Forks and repos
+      # without PYPI_API_TOKEN skip the publish cleanly.
+      - name: Check for PyPI token
+        id: token
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -n "$PYPI_API_TOKEN" ]; then
+            echo "have=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have=false" >> "$GITHUB_OUTPUT"
+            echo "PYPI_API_TOKEN secret not set — skipping PyPI publish." >&2
+          fi
+      - uses: actions/download-artifact@v4
+        if: steps.token.outputs.have == 'true'
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        if: steps.token.outputs.have == 'true'
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

@@ -69,8 +69,10 @@ class PolishConfig:
     keep_alive: str = "30m"
     num_ctx: int = 8192
     num_predict: int = 2048
-    think: bool = True
-    think_min_chars: int = 100  # skip thinking below this input length
+    # Thinking adds many seconds of latency per utterance; for dictation the
+    # polish task rarely needs it. Opt in for long-form quality if you like.
+    think: bool = False
+    think_min_chars: int = 100  # even when enabled, skip thinking below this length
     num_gpu: int = -1  # -1 = let backend decide
     timeout: float = 60.0
     vram_unload_below_mb: int = 0  # >0: unload polish model when free VRAM dips
