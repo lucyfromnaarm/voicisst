@@ -1,0 +1,27 @@
+[Unit]
+Description=Flow — hold-to-talk dictation
+After=graphical-session.target ydotoold.service
+Wants=ydotoold.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/WebstormProjects/audioforlucy
+Environment=PYTHONUNBUFFERED=1
+Environment=YDOTOOL_SOCKET=%t/.ydotool_socket
+ExecStart=/usr/bin/python3 %h/WebstormProjects/audioforlucy/flow.py
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Light hardening — full sandbox would block PyTorch/whisper JIT and PortAudio.
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=default.target
