@@ -37,7 +37,7 @@ curl -fsSL https://raw.githubusercontent.com/lucyfromnaarm/voicisst/main/scripts
 or with pipx / uv:
 
 ```bash
-pipx install "voicisst[local]"     # or: uv tool install "voicisst[local]"
+pipx install "voicisst[local,ui]"  # or: uv tool install "voicisst[local,ui]"
 ollama pull qwen3.5:4b                   # the default polish model
 voicisst selftest                            # checks mic, models, hotkeys, typing
 voicisst run                                 # (bare `voicisst` does the same)
@@ -51,13 +51,21 @@ On Linux, run `scripts/setup-linux.sh` once first — it installs ydotool, sets 
 irm https://raw.githubusercontent.com/lucyfromnaarm/voicisst/main/scripts/install.ps1 | iex
 ```
 
-or `pipx install "voicisst[local]"`, then `voicisst selftest` and `voicisst run` as above.
+or `pipx install "voicisst[local,ui]"`, then `voicisst selftest` and `voicisst run` as above.
 
 **Prebuilt binaries**
 
 No Python needed: grab `voicisst-<version>-<os>-<arch>.tar.gz` (or `.zip`) from the [Releases page](https://github.com/lucyfromnaarm/voicisst/releases), unpack, run `./voicisst`.
 
 Then hold the hotkey — Menu key on Linux, right Option on macOS, right Ctrl on Windows — speak, and release.
+
+### Prefer buttons to config files?
+
+```bash
+voicisst ui
+```
+
+That opens a settings page in your browser: a setup wizard that helps you pick a microphone, capture a hotkey by pressing it, and check your models — then writes the config file for you. `voicisst run --ui` adds a live dashboard that shows what dictation is doing right now (listening, transcribing, polishing...), so every audio cue has a visual equivalent and you never need sound to know the state. The page runs only on your own machine and makes no external requests. Details in [docs/UI.md](docs/UI.md).
 
 ## Three ways to run it
 
@@ -113,10 +121,11 @@ Voicisst has no accounts, no telemetry, and no cloud component. In local mode no
 
 ## Accessibility
 
-Voicisst exists because of a chronic illness, and it's built for limited energy and mobility first: toggle mode plus silence auto-stop means dictating without holding anything down, every hotkey and threshold is configurable, audio cues confirm state without needing to look, and the setup scripts try hard to leave nothing manual. If something about Voicisst is hard to use with your body, that's a bug — [please open an issue](https://github.com/lucyfromnaarm/voicisst/issues).
+Voicisst exists because of a chronic illness, and it's built for limited energy and mobility first: toggle mode plus silence auto-stop means dictating without holding anything down, every hotkey and threshold is configurable, audio cues confirm state without needing to look, and the setup scripts try hard to leave nothing manual. Every audio cue also has a visual equivalent — the dashboard and tray icon show the dictation state by shape and text, not color alone — and the web UI is built to WCAG AA, keyboard-first. If something about Voicisst is hard to use with your body, that's a bug — [please open an issue](https://github.com/lucyfromnaarm/voicisst/issues).
 
 ## Docs
 
+- [The web UI: setup wizard, settings, dashboard](docs/UI.md)
 - [Configuration reference](docs/CONFIGURATION.md)
 - [Running a server](docs/SERVER.md)
 - [Platform setup (Linux / macOS / Windows)](docs/PLATFORMS.md)

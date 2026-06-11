@@ -129,6 +129,46 @@ when `onboarded` is false → #setup; else #dashboard.
   Save buttons disabled-until-dirty, success/error announced in an
   aria-live region. Includes replacements (key→value row editor) and
   dictionary words (textarea, one per line → dictionary.words list).
+
+  **Conditional visibility (hard requirement)** — never show settings
+  that don't apply: engine.server_url/token/request_timeout only when
+  engine.mode == "remote"; the [whisper] model/device fields and the
+  whole [polish] section only in local mode (remote shows one line:
+  "runs on your server"); [server] collapsed behind a "Server hosting"
+  details element; platform-gated fields (evdev backend, use_selection,
+  cmd-v chord) only on their platform. Visibility re-evaluates live when
+  engine.mode changes; hidden fields keep their values; a "Show all
+  settings" toggle reveals everything. SCHEMA encodes this as a `when`
+  object per field/section. The wizard's engine step branches the same
+  way.
+
+  **Conditional visibility (hard requirement)** — never show settings
+  that don't apply to the user's current situation:
+  - `engine.server_url`, `engine.token`, `engine.request_timeout` only
+    when `engine.mode == "remote"`.
+  - The `[whisper]` model/device/compute/beam_size/vad_filter fields and
+    the whole `[polish]` section only when `engine.mode == "local"`
+    (in remote mode show one short line: "Transcription and polish run on
+    your server — configure them there."). `whisper.language` stays
+    visible in both modes (it is sent to the server).
+  - The `[server]` section lives in a collapsed `<details>` labelled
+    "Server hosting (voicisst serve)" — most users never open it.
+  - Platform gates (from /api/meta.platform): `hotkey.backend` offers
+    evdev only on linux; `dictionary.use_selection` linux-only;
+    `output.paste_chord` choices appropriate to the platform (cmd-v on
+    darwin); key-name help text per platform.
+  - Visibility re-evaluates LIVE when engine.mode (or another driver
+    field) changes — no save required. Hidden fields keep their stored
+    values untouched.
+  - Escape hatch: a single "Show all settings" toggle (persisted in
+    localStorage) reveals everything, with hidden-by-default fields
+    visually marked "not used in your current setup". Announce the
+    reveal via the aria-live region.
+  - SCHEMA encodes this as a `when` object per field/section, e.g.
+    `{"engine.mode": "remote"}` or `{"platform": "linux"}` — pure JSON,
+    interpreted by one small visibility function.
+  - The wizard's engine step branches the same way (local fields vs
+    remote fields, never both at once).
 - **Help**: links to docs, "rerun setup", troubleshooting quick list,
   version from /api/meta.
 

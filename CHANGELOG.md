@@ -6,6 +6,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-11
+
+A web UI, so nobody has to edit TOML by hand unless they want to.
+
+### Added
+
+- **Web UI** (`voicisst ui`): setup wizard, settings editor, and help, served
+  on `127.0.0.1` only and opened in your normal browser. No build step, no
+  frameworks, no external requests; every page load needs a per-run secret
+  token, so other programs and users on the machine can't reach it either.
+  Installed via the new `ui` extra (`pip install "voicisst[ui]"`).
+- **Setup wizard**: pick and test your microphone, capture a hotkey by
+  pressing it, choose hold or toggle mode, set up local or remote
+  transcription with a warm-up check, test the polish step, and get
+  platform permission instructions for your OS only. Every step can be
+  skipped, and the whole wizard can be rerun from Help.
+- **Settings editor**: forms for every config option plus a raw TOML editor.
+  Both validate before saving, and saving keeps the comments and layout of
+  your config file.
+- **Live dashboard** (`voicisst run --ui`): a large indicator showing what
+  dictation is doing right now — idle, listening, transcribing, polishing,
+  delivering, or error — using shape and text as well as color, with
+  updates pushed over a WebSocket. Screen readers get the same updates
+  through a live region.
+- **State-aware tray icon**: with `voicisst run --ui --tray`, the tray icon
+  changes shape and color with the dictation state (distinguishable without
+  color vision) and gains an "Open settings UI" menu item.
+- `events.StateBus`: a small thread-safe publish/subscribe bus that carries
+  dictation state to the tray and the dashboard without being able to break
+  dictation itself.
+- New `[ui]` config keys: `web_port` (default `8766`) and `open_browser`
+  (default `true`); `voicisst ui --port/--no-browser` override them.
+
 ## [0.1.0] - 2026-06-11
 
 First release. Voicisst grew out of a single-file Linux prototype; 0.1.0 is the
@@ -53,5 +86,6 @@ cross-platform rewrite.
   (udev/uinput/input group/ydotoold), systemd units, macOS LaunchAgent
   template.
 
-[Unreleased]: https://github.com/lucyfromnaarm/voicisst/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lucyfromnaarm/voicisst/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lucyfromnaarm/voicisst/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucyfromnaarm/voicisst/releases/tag/v0.1.0

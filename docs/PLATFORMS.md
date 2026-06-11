@@ -4,6 +4,12 @@ What Voicisst needs from each OS, and how to give it that with the least
 friction. After any setup change, `voicisst selftest` tells you whether it
 worked.
 
+The web UI (`voicisst ui`, see [UI.md](UI.md)) works identically on every
+platform — it runs in your normal browser, so nothing below applies to it.
+The platform differences are about hotkeys, typing, and audio. The UI's
+setup wizard knows about them too: it shows the permission steps for the OS
+you're actually on and skips the rest.
+
 ## Linux
 
 Voicisst supports both Wayland and X11. Two things need system-level setup:
@@ -93,15 +99,16 @@ section.
 ## macOS
 
 ```bash
-pipx install "voicisst[local]"
+pipx install "voicisst[local,ui]"
 voicisst selftest
 voicisst
 ```
 
 Default hotkey: **right Option** (`alt_r`), hold to talk. Pasting uses Cmd+V.
 
-macOS gates everything Voicisst does behind permission prompts. All three live
-in **System Settings → Privacy & Security**:
+macOS gates everything Voicisst does behind permission prompts. The setup
+wizard (`voicisst ui`) walks you through all three; here they are in full.
+They all live in **System Settings → Privacy & Security**:
 
 1. **Microphone** — prompted automatically the first time Voicisst records. If
    you missed the prompt: System Settings → Privacy & Security → Microphone,
@@ -135,7 +142,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/one.octavia.voicisst.pli
 irm https://raw.githubusercontent.com/lucyfromnaarm/voicisst/main/scripts/install.ps1 | iex
 ```
 
-or `pipx install "voicisst[local]"`, or unzip the release binary.
+or `pipx install "voicisst[local,ui]"`, or unzip the release binary.
 
 Default hotkey: **right Ctrl** (`ctrl_r`), hold to talk. Hotkeys and typing
 both use pynput; pasting is Ctrl+V.

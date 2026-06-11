@@ -1,4 +1,4 @@
-"""Voicisst command-line interface: `voicisst run / serve / selftest / config / version`.
+"""Voicisst command-line interface: `voicisst run / serve / ui / selftest / config / version`.
 
 Bare `voicisst` is `voicisst run`. CLI flags map onto config overrides (the highest
 precedence layer in load_config), so `--server URL` is exactly
@@ -30,6 +30,22 @@ _CONFIG_OPTION = click.option(
     metavar="PATH",
     help="Config file to use (default: `voicisst config path`).",
 )
+
+
+def _load_serve_ui():
+    """Import the web UI server lazily; explain the fix when it's missing.
+
+    The UI stack (fastapi/uvicorn) is an optional extra; a missing import
+    must read as "here is how to install it", never as a traceback.
+    """
+    try:
+        from .ui.server import serve_ui
+    except ImportError as e:
+        raise EngineError(
+            f"the web UI is not available: {e}",
+            hint="install the UI extra: pip install 'voicisst[ui]'",
+        ) from e
+    return serve_ui
 
 
 @click.group(invoke_without_command=True)
@@ -68,6 +84,12 @@ def cli(ctx: click.Context) -> None:
 )
 @_CONFIG_OPTION
 @click.option("--tray", is_flag=True, help="Show a system-tray icon (needs the tray extra).")
+@click.option(
+    "--ui",
+    "with_ui",
+    is_flag=True,
+    help="Also serve the local web dashboard/settings UI (see `voicisst ui`).",
+)
 def run(
     server_url: str | None,
     token: str | None,
@@ -76,6 +98,7 @@ def run(
     language: str | None,
     config_file: Path | None,
     tray: bool,
+    with_ui: bool,
 ) -> None:
     """Run dictation (the default command)."""
     overrides: dict[str, object] = {}
@@ -94,12 +117,39 @@ def run(
         overrides["ui.tray"] = True
     cfg = config_mod.load_config(path=config_file, overrides=overrides)
     engine = get_engine(cfg)
-    app = DictationApp(cfg, engine)
+
+    bus = None
+    ui_url: str | None = None
+    if with_ui:
+        # One StateBus shared by the dictation app, the web dashboard and
+        # the tray: everyone sees the same live state.
+        from .events import StateBus
+
+        serve_ui = _load_serve_ui()
+        bus = StateBus()
+        # serve_ui generates the per-run token and prints/open()s the full
+        # tokened URL itself; the tray gets the base URL — the browser's
+        # cookie from that first launch authorizes it.
+        ui_url = f"http://127.0.0.1:{cfg.ui.web_port}/"
+        # uvicorn runs in a daemon thread with its own event loop; dictation
+        # keeps the main thread (except the darwin tray inversion below).
+        threading.Thread(
+            target=serve_ui,
+            args=(cfg,),
+            kwargs={"bus": bus},
+            name="voicisst-ui",
+            daemon=True,
+        ).start()
+
+    app = DictationApp(cfg, engine, bus=bus)
     if not cfg.ui.tray:
         app.run()
         return
     from .tray import run_tray
 
+    # Only pass the new tray params when the UI is on, so a plain
+    # `voicisst run --tray` keeps its exact pre-UI call shape.
+    tray_kwargs: dict[str, object] = {"bus": bus, "ui_url": ui_url} if with_ui else {}
     if sys.platform == "darwin":
         # pystray's AppKit backend must own the MAIN thread on macOS, so the
         # arrangement is inverted there: dictation runs in a background thread
@@ -108,14 +158,16 @@ def run(
         app_thread = threading.Thread(target=app.run, name="voicisst", daemon=True)
         app_thread.start()
         try:
-            run_tray(app, cfg)
+            run_tray(app, cfg, **tray_kwargs)
         except KeyboardInterrupt:
             print("\nflow: shutting down", file=sys.stderr)
         finally:
             app.stop()
             app_thread.join(timeout=5.0)
         return
-    threading.Thread(target=run_tray, args=(app, cfg), name="voicisst-tray", daemon=True).start()
+    threading.Thread(
+        target=run_tray, args=(app, cfg), kwargs=tray_kwargs, name="voicisst-tray", daemon=True
+    ).start()
     app.run()
 
 
@@ -139,6 +191,35 @@ def serve(
     from . import server as server_mod
 
     server_mod.serve(cfg)
+
+
+@cli.command("ui")
+@click.option(
+    "--port",
+    type=int,
+    default=None,
+    help="Port for the web UI (default: [ui] web_port, 8766).",
+)
+@click.option(
+    "--no-browser",
+    "no_browser",
+    is_flag=True,
+    help="Don't open the browser automatically; just print the URL.",
+)
+@_CONFIG_OPTION
+def ui(port: int | None, no_browser: bool, config_file: Path | None) -> None:
+    """Open the setup and settings web UI (no dictation).
+
+    Serves on 127.0.0.1 only. For the live dictation dashboard, use
+    `voicisst run --ui` instead.
+    """
+    overrides: dict[str, object] = {}
+    if port is not None:
+        overrides["ui.web_port"] = port
+    cfg = config_mod.load_config(path=config_file, overrides=overrides)
+    serve_ui = _load_serve_ui()
+    # open_browser=None lets [ui] open_browser from the config decide.
+    serve_ui(cfg, open_browser=False if no_browser else None, port=port)
 
 
 @cli.command()

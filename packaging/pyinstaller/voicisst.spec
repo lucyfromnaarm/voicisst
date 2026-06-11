@@ -1,7 +1,7 @@
 # -*- mode: python -*-
 """PyInstaller spec for the standalone ``voicisst`` binary (onedir).
 
-Build (with voicisst[local,server] + pyinstaller installed):
+Build (with voicisst[local,server,ui] + pyinstaller installed):
 
     pyinstaller --noconfirm packaging/pyinstaller/voicisst.spec
 
@@ -50,6 +50,12 @@ for package in ("faster_whisper", "ctranslate2"):
 # _sounddevice_data package (Linux wheels use the system libportaudio).
 if _have("_sounddevice_data"):
     datas += collect_data_files("_sounddevice_data")
+
+# The web UI (voicisst ui / voicisst run --ui) serves hand-written
+# HTML/CSS/JS from src/voicisst/ui/static as package data; static analysis
+# only follows imports, so collect the files explicitly.
+if _have("voicisst.ui"):
+    datas += collect_data_files("voicisst.ui")
 
 # uvicorn picks its event loop / protocol implementations via importlib at
 # runtime, invisible to static analysis.

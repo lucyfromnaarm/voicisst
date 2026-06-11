@@ -1,0 +1,444 @@
+/* Voicisst UI — calm, warm, uncluttered. System fonts, one accent.
+   Hard rules: AA contrast in light AND dark, visible focus, ≥44px targets,
+   no animation under prefers-reduced-motion, no information by color alone. */
+
+:root {
+  --bg: #faf6ef;
+  --card: #fffdf9;
+  --ink: #2e2820;
+  --ink-soft: #5d5246;
+  --line: #e4dacb;
+  --accent: #8c4a1d;        /* warm sienna — the one accent */
+  --accent-ink: #ffffff;
+  --ok: #2e6b40;
+  --warn: #8a2f24;
+  --code-bg: #f1e9dc;
+  --shadow: 0 1px 3px rgba(70, 50, 30, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #211d18;
+    --card: #2b261f;
+    --ink: #f0e9df;
+    --ink-soft: #c3b8a8;
+    --line: #4a4136;
+    --accent: #e9a36b;
+    --accent-ink: #2c1505;
+    --ok: #8fd3a3;
+    --warn: #ffaf9f;
+    --code-bg: #38312a;
+    --shadow: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--bg); }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell,
+    "Noto Sans", sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 0.92em;
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 0.1em 0.4em;
+  overflow-wrap: anywhere;
+}
+
+::selection { background: var(--accent); color: var(--accent-ink); }
+
+/* ----- focus: always visible, never removed ----- */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -4rem;
+  z-index: 10;
+  background: var(--accent);
+  color: var(--accent-ink);
+  padding: 0.7rem 1.1rem;
+  border-radius: 0 0 10px 10px;
+  text-decoration: none;
+}
+.skip-link:focus { top: 0; }
+
+/* ----- header + nav ----- */
+header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.5rem;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  margin: 0;
+  font-weight: 700;
+  font-size: 1.2rem;
+  letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brand-dot {
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+
+nav ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+}
+
+nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.9rem;
+  border-radius: 10px;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+nav a:hover { color: var(--ink); background: var(--code-bg); }
+nav a[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 650;
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+/* ----- layout ----- */
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 5rem;
+}
+
+h1 { font-size: 1.6rem; line-height: 1.25; margin: 0.75rem 0 1rem; }
+h2 { font-size: 1.2rem; margin: 0 0 0.5rem; }
+h3 { font-size: 1.05rem; margin: 0.5rem 0 0.25rem; }
+
+a { color: var(--accent); }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+  margin: 1rem 0;
+  box-shadow: var(--shadow);
+}
+
+.help { color: var(--ink-soft); font-size: 0.95rem; margin: 0.35rem 0; }
+
+/* ----- the state hero (dashboard) ----- */
+.state-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.5rem;
+  margin: 2rem 0 1rem;
+}
+
+.state-circle {
+  --fill: transparent;
+  --ring: var(--line);
+  --glyph: var(--ink-soft);
+  flex: none;
+  width: 8.5rem;            /* ≥120px, scales with zoom */
+  height: 8.5rem;
+  min-width: 120px;
+  min-height: 120px;
+  border-radius: 50%;
+  background: var(--fill);
+  border: 5px solid var(--ring);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#state-icon {
+  font-size: 3rem;
+  line-height: 1;
+  color: var(--glyph);
+}
+
+/* Every state pairs a distinct shape/icon with its color — never color only. */
+.is-idle         { --fill: transparent; --ring: #8a7f72; --glyph: var(--ink-soft); }
+.is-listening    { --fill: #b3261e; --ring: #b3261e; --glyph: #ffffff; }
+.is-transcribing { --fill: #9a6200; --ring: #9a6200; --glyph: #ffffff; border-style: dotted; }
+.is-polishing    { --fill: #6d4fa3; --ring: #6d4fa3; --glyph: #ffffff; }
+.is-delivering   { --fill: #2e6b40; --ring: #2e6b40; --glyph: #ffffff; }
+.is-error        { --fill: #7a1c12; --ring: var(--ink); --glyph: #ffffff; border-style: double; border-width: 7px; }
+.is-stopped      { --fill: #5d5246; --ring: #5d5246; --glyph: #ffffff; }
+.is-off          { --fill: transparent; --ring: var(--line); --glyph: var(--ink-soft); border-style: dashed; }
+
+@media (prefers-color-scheme: dark) {
+  .is-idle         { --ring: #8a7f72; }
+  .is-listening    { --fill: #ff8d80; --ring: #ff8d80; --glyph: #3a0a05; }
+  .is-transcribing { --fill: #f4b942; --ring: #f4b942; --glyph: #3a2a00; }
+  .is-polishing    { --fill: #c8b1f2; --ring: #c8b1f2; --glyph: #241640; }
+  .is-delivering   { --fill: #92d9a8; --ring: #92d9a8; --glyph: #0c2e17; }
+  .is-error        { --fill: #ffb4a8; --ring: var(--ink); --glyph: #3a0a05; }
+  .is-stopped      { --fill: #c3b8a8; --ring: #c3b8a8; --glyph: #221c14; }
+}
+
+/* The gentle listening pulse only runs when the visitor is okay with motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .is-listening { animation: voicisst-pulse 2.2s ease-in-out infinite; }
+  @keyframes voicisst-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(179, 38, 30, 0.35); }
+    50%      { box-shadow: 0 0 0 16px rgba(179, 38, 30, 0); }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.state-name {
+  font-size: 1.7rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.state-detail { margin: 0.25rem 0 0; color: var(--ink-soft); }
+
+.conn-note { color: var(--ink-soft); }
+
+/* ----- key/value list (engine health) ----- */
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1.25rem;
+  margin: 0.5rem 0 1rem;
+}
+.kv dt { color: var(--ink-soft); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+
+/* ----- buttons ----- */
+button {
+  font: inherit;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.55rem 1.2rem;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { filter: brightness(1.08); }
+button.ghost {
+  background: transparent;
+  color: var(--accent);
+}
+button.ghost:hover:not(:disabled) { background: var(--code-bg); filter: none; }
+button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+}
+
+/* ----- forms ----- */
+label { display: block; font-weight: 600; }
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  font: inherit;
+  width: 100%;
+  max-width: 30rem;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+  margin-top: 0.25rem;
+}
+textarea {
+  max-width: 100%;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.row { margin: 0.9rem 0; }
+.row .help { margin-top: 0.3rem; }
+
+/* checkbox / radio rows: the whole label is part of the ≥44px target */
+.choice,
+.row-check {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  min-height: 44px;
+  margin: 0.15rem 0;
+}
+.choice label,
+.row-check label {
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+.row-check .help { flex-basis: 100%; margin: 0 0 0.4rem 2.2rem; }
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem 1.1rem 1.1rem;
+  margin: 1.1rem 0;
+  background: var(--card);
+}
+legend {
+  font-weight: 700;
+  padding: 0 0.4rem;
+}
+
+/* ----- status lines (results, save feedback) ----- */
+.status { min-height: 1.5rem; margin: 0.5rem 0; overflow-wrap: anywhere; }
+.status.ok { color: var(--ok); font-weight: 600; }
+.status.warn { color: var(--warn); font-weight: 600; }
+
+.save-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+/* ----- replacements row editor ----- */
+.rep-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+.rep-row input { width: auto; flex: 1 1 9rem; margin-top: 0; }
+.rep-arrow { color: var(--ink-soft); }
+
+/* ----- wizard ----- */
+.wiz-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  counter-reset: wizstep;
+}
+.wiz-progress li {
+  counter-increment: wizstep;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+.wiz-progress li::before {
+  content: counter(wizstep) ".";
+  margin-right: 0.4rem;
+  font-weight: 700;
+}
+.wiz-progress li[aria-current="step"] {
+  border: 2px solid var(--accent);
+  color: var(--ink);
+  font-weight: 650;
+}
+.wiz-progress li.done::after {
+  content: " ✓";
+  color: var(--ok);
+  margin-left: 0.3rem;
+}
+
+.wiz-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1.25rem 0;
+}
+.wiz-nav #wiz-next { margin-left: auto; }
+
+.summary { padding-left: 1.25rem; }
+.summary li { margin: 0.25rem 0; overflow-wrap: anywhere; }
+
+/* ----- help view ----- */
+.help-links { list-style: none; padding: 0; }
+.help-links li { margin: 0.25rem 0; }
+.help-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.fixes li { margin: 0.6rem 0; }
+
+.raw-details summary,
+.section-details summary {
+  cursor: pointer;
+  font-weight: 650;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.section-details { margin: 1.1rem 0; }
+
+/* conditional-visibility marks ("Show all settings" mode) */
+.not-used {
+  font-weight: 400;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.remote-note { margin: 0.9rem 0 1.1rem; }

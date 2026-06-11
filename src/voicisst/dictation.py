@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from . import audio as audio_mod
-from . import clipboard
+from . import clipboard, events
 from .engine.base import EngineError
 from .inject import windowinfo
 from .notify import notify
@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
     from .config import Config
     from .engine.base import Engine, StreamSession
+    from .events import StateBus
     from .hotkeys.base import HotkeyListener
     from .inject.base import Injector
 
@@ -52,7 +53,9 @@ class DictationApp:
 
     `listener_factory` / `injector_factory` exist for dependency injection
     in tests; production code uses `hotkeys.get_listener` and
-    `inject.get_injector`.
+    `inject.get_injector`. When a `bus` (events.StateBus) is provided, the
+    app publishes its state at the same points the beeps/notifications
+    fire, so the tray icon and the web dashboard can mirror it live.
     """
 
     def __init__(
@@ -64,10 +67,12 @@ class DictationApp:
         listener_factory: ListenerFactory | None = None,
         injector_factory: InjectorFactory | None = None,
         watchdog_tick_s: float = 1.0,
+        bus: StateBus | None = None,
     ):
         self.cfg = cfg
         self.engine = engine
         self.injector = injector
+        self.bus = bus
         self._listener_factory = listener_factory
         self._injector_factory = injector_factory
         self._watchdog_tick_s = watchdog_tick_s
@@ -235,6 +240,7 @@ class DictationApp:
                 rec.stop()
             except Exception:
                 pass
+        self._publish(events.STOPPED)
 
     # -- hotkey callbacks (any thread) ----------------------------------------
 
@@ -327,7 +333,9 @@ class DictationApp:
             except Exception as e:
                 self._notify("dictation error", str(e), "critical")
                 self._beep("error")
+                self._publish(events.ERROR, f"dictation error: {e}")
                 self._reset_after_error()
+                self._publish(events.IDLE)
 
     def _handle_start(self) -> None:
         cfg = self.cfg
@@ -340,6 +348,8 @@ class DictationApp:
                 self._active = False
             self._notify("recorder failed", str(e), "critical")
             self._beep("error")
+            self._publish(events.ERROR, f"recorder failed: {e}")
+            self._publish(events.IDLE)
             return
         if cfg.audio.auto_stop_silence_s > 0:
             self._silence_fed = 0
@@ -352,6 +362,7 @@ class DictationApp:
                 speech_rms=self._effective_rms_gate(),
             )
         self._beep("start")
+        self._publish(events.LISTENING)
         self._log(f"listening (vocab: {self._vocab[:60]})" if self._vocab else "listening")
 
         if cfg.output.stream:
@@ -396,6 +407,8 @@ class DictationApp:
                 typer.erase_all()
             self._stop_pump()
             self._close_session(session, cancel=True)
+            self._publish(events.ERROR, f"recorder stop failed: {e}")
+            self._publish(events.IDLE)
             return
         # Recorder is stopped: chunks are final. Drain them into the stream
         # session before finalize so the server/local pass sees everything.
@@ -407,6 +420,7 @@ class DictationApp:
             if typer is not None:
                 typer.erase_all()
             self._close_session(session, cancel=True)
+            self._publish(events.IDLE)
             return
         self._beep("stop")
 
@@ -419,6 +433,9 @@ class DictationApp:
                 typer.erase_all()
             self._close_session(session, cancel=True)
             self._notify(reason[0], reason[1])
+            # Actionable rejection: tell the UI what went wrong, then idle.
+            self._publish(events.ERROR, f"{reason[0]} — {reason[1]}")
+            self._publish(events.IDLE)
 
         if dur_ms < cfg.audio.min_record_ms:
             reject(
@@ -445,6 +462,8 @@ class DictationApp:
             )
             return
 
+        # The stop cleared every gate: the utterance is being processed.
+        self._publish(events.TRANSCRIBING)
         t0 = time.monotonic()
         if session is not None and typer is not None:
             raw, final, app_cls = self._finish_streaming(session, typer, streamed)
@@ -452,6 +471,7 @@ class DictationApp:
             raw, final, app_cls = self._finish_plain(audio_arr, dur_ms)
         elapsed = time.monotonic() - t0
         if not raw and not final:
+            self._publish(events.IDLE)
             return
         if final and cfg.history.enabled:
             self._append_history(raw, final, app_cls)
@@ -459,6 +479,7 @@ class DictationApp:
             f"{dur_ms / 1000:.1f}s audio -> {len(final)} chars in {elapsed:.2f}s "
             f"(raw={raw[:60]!r})"
         )
+        self._publish(events.IDLE)
 
     # -- plain (non-streaming) path ----------------------------------------------
 
@@ -481,6 +502,7 @@ class DictationApp:
         except EngineError as e:
             self._notify(f"transcription failed: {e}", e.hint or "", "critical")
             self._beep("error")
+            self._publish(events.ERROR, f"transcription failed: {e}")
             return "", "", None
         if not raw:
             self._beep("cancel")
@@ -488,6 +510,7 @@ class DictationApp:
             return "", "", None
         cleaned = raw
         if cfg.polish.enabled:
+            self._publish(events.POLISHING)
             self._log(f"polishing… {raw[:80]!r}")
             try:
                 cleaned = str(
@@ -498,6 +521,7 @@ class DictationApp:
                 # does, the user's words still win.
                 self._notify(f"polish failed: {e}", e.hint or "")
                 cleaned = raw
+        self._publish(events.DELIVERING)
         final, app_cls = self._deliver(cleaned)
         return raw, final, app_cls
 
@@ -513,6 +537,7 @@ class DictationApp:
         self._cancel_polish.clear()
         self._live_session = session  # teardown can cancel a blocked finalize
         self._polishing.set()
+        self._publish(events.POLISHING)
         cleaned = ""
         cancelled = False
         failed = False
@@ -530,6 +555,7 @@ class DictationApp:
             failed = True
             self._notify(f"processing failed: {e}", e.hint or "", "critical")
             self._beep("error")
+            self._publish(events.ERROR, f"processing failed: {e}")
         finally:
             try:
                 gen.close()
@@ -546,6 +572,7 @@ class DictationApp:
 
         if cancelled:
             fallback = sanitize(raw or cleaned)
+            self._publish(events.DELIVERING)
             typer.replace_with(fallback)
             self._notify("polish cancelled", "using raw transcript")
             final = fallback
@@ -556,6 +583,7 @@ class DictationApp:
             fallback = apply_replacements(sanitize(raw or cleaned), cfg.replacements)
             typer.replace_with(fallback)
             self._notify("polish failed", "raw transcript kept")
+            self._publish(events.ERROR, "polish failed — raw transcript kept")
             final = fallback
             self._close_session(session, cancel=True)
         elif not cleaned.strip():
@@ -567,6 +595,7 @@ class DictationApp:
             return raw, "", None
         else:
             final = apply_replacements(sanitize(cleaned), cfg.replacements)
+            self._publish(events.DELIVERING)
             typer.replace_with(final)
             self._close_session(session)
         app_cls = windowinfo.focused_window_class()
@@ -708,6 +737,22 @@ class DictationApp:
         if self.cfg.audio.normalize:
             gate = gate / audio_mod.NORMALIZE_MAX_GAIN
         return max(gate, self.cfg.audio.muted_rms)
+
+    def _publish(self, state: str, detail: str = "") -> None:
+        """Publish a state event for the tray/web UI; never break dictation.
+
+        StateBus already isolates subscriber failures, but the worker must
+        survive even a broken bus object, so the call is guarded too.
+        Details are short, pre-formatted user-facing strings — never raw
+        exception objects.
+        """
+        bus = self.bus
+        if bus is None:
+            return
+        try:
+            bus.publish(state, detail[:200])
+        except Exception as e:
+            print(f"voicisst: state publish failed: {e}", file=sys.stderr)
 
     def _beep(self, kind: str) -> None:
         audio_mod.play_beep(kind, self.cfg.ui.beep)

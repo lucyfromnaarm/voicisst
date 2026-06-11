@@ -15,6 +15,7 @@ import voicisst.audio as audio_mod
 import voicisst.cli as cli_mod
 import voicisst.clipboard as clipboard_mod
 import voicisst.config as config_mod
+import voicisst.events as events_mod
 import voicisst.inject as inject_mod
 import voicisst.selftest as selftest_mod
 import voicisst.server as server_mod
@@ -22,6 +23,7 @@ import voicisst.tray as tray_mod
 from helpers import FakeEngine, make_audio
 from voicisst import __version__
 from voicisst.engine.base import EngineError
+from voicisst.events import StateBus
 from voicisst.hotkeys.evdev_listener import EvdevListener
 from voicisst.hotkeys.pynput_listener import PynputListener
 
@@ -55,6 +57,7 @@ class FakeApp:
         self.cfg = cfg
         self.engine = engine
         self.injector = injector
+        self.kwargs = kwargs  # bus etc.
         self.ran = False
         self.stopped = False
         FakeApp.instances.append(self)
@@ -289,6 +292,153 @@ def test_bare_invocation_defaults_to_run(runner, fake_app, monkeypatch, tmp_conf
     res = runner.invoke(cli_mod.cli, [])
     assert res.exit_code == 0, res.output
     assert fake_app.instances and fake_app.instances[0].ran
+
+
+# ---------------------------------------------------------------------------
+# `voicisst ui`: standalone web UI wiring
+
+
+def test_ui_command_passes_port_and_no_browser(runner, monkeypatch, tmp_path):
+    calls = {}
+
+    def fake_serve_ui(cfg, *, bus=None, engine=None, open_browser=None, port=None):
+        calls.update(cfg=cfg, bus=bus, open_browser=open_browser, port=port)
+
+    monkeypatch.setattr(cli_mod, "_load_serve_ui", lambda: fake_serve_ui)
+    res = runner.invoke(
+        cli_mod.cli,
+        ["ui", "--port", "9100", "--no-browser", "--config", str(write_config(tmp_path))],
+    )
+    assert res.exit_code == 0, res.output
+    assert calls["port"] == 9100
+    assert calls["open_browser"] is False
+    assert calls["bus"] is None  # standalone mode: no dictation state
+    assert calls["cfg"].ui.web_port == 9100  # the flag lands in the config too
+
+
+def test_ui_command_defaults_let_config_decide(runner, monkeypatch, tmp_path):
+    calls = {}
+
+    def fake_serve_ui(cfg, *, bus=None, engine=None, open_browser=None, port=None):
+        calls.update(open_browser=open_browser, port=port)
+
+    monkeypatch.setattr(cli_mod, "_load_serve_ui", lambda: fake_serve_ui)
+    res = runner.invoke(cli_mod.cli, ["ui", "--config", str(write_config(tmp_path))])
+    assert res.exit_code == 0, res.output
+    assert calls["open_browser"] is None  # [ui] open_browser decides
+    assert calls["port"] is None  # [ui] web_port decides
+
+
+def test_main_ui_missing_extra_prints_install_hint(monkeypatch, capsys, tmp_path):
+    # Simulate the ui extra being absent: importing voicisst.ui fails.
+    monkeypatch.setitem(sys.modules, "voicisst.ui", None)
+    monkeypatch.setitem(sys.modules, "voicisst.ui.server", None)
+    monkeypatch.setattr(
+        sys, "argv", ["voicisst", "ui", "--config", str(write_config(tmp_path))]
+    )
+    with pytest.raises(SystemExit) as exc:
+        cli_mod.main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "pip install 'voicisst[ui]'" in err
+    assert "Traceback" not in err
+
+
+# ---------------------------------------------------------------------------
+# `voicisst run --ui`: ONE StateBus shared by the app, the web UI server
+# (daemon thread, started before dictation blocks) and the tray.
+
+
+def test_run_ui_shares_one_bus_and_starts_server_before_app(
+    runner, fake_app, fake_threads, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    order: list[str] = []
+    calls = {}
+
+    def fake_serve_ui(cfg, *, bus=None, engine=None, open_browser=None, port=None):
+        order.append("serve_ui")
+        calls.update(cfg=cfg, bus=bus)
+
+    monkeypatch.setattr(cli_mod, "_load_serve_ui", lambda: fake_serve_ui)
+    orig_run = fake_app.run
+
+    def tracked_run(self):
+        order.append("app.run")
+        orig_run(self)
+
+    monkeypatch.setattr(fake_app, "run", tracked_run)
+    res = runner.invoke(cli_mod.cli, ["run", "--ui", "--config", str(write_config(tmp_path))])
+    assert res.exit_code == 0, res.output
+    app = fake_app.instances[0]
+    bus = calls["bus"]
+    assert isinstance(bus, StateBus)
+    assert app.kwargs.get("bus") is bus  # one bus, shared
+    assert calls["cfg"] is app.cfg
+    assert order == ["serve_ui", "app.run"]  # UI server starts first
+    ui_threads = [t for t in fake_threads.instances if t.name == "voicisst-ui"]
+    assert len(ui_threads) == 1 and ui_threads[0].daemon
+
+
+def test_run_without_ui_passes_no_bus(runner, fake_app, monkeypatch, tmp_path):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    res = runner.invoke(cli_mod.cli, ["run", "--config", str(write_config(tmp_path))])
+    assert res.exit_code == 0, res.output
+    assert fake_app.instances[0].kwargs.get("bus") is None
+
+
+def test_run_ui_tray_passes_bus_and_url_to_tray(
+    runner, fake_app, fake_threads, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    monkeypatch.setattr(sys, "platform", "linux")
+    serve_calls = {}
+
+    def fake_serve_ui(cfg, *, bus=None, engine=None, open_browser=None, port=None):
+        serve_calls["bus"] = bus
+
+    monkeypatch.setattr(cli_mod, "_load_serve_ui", lambda: fake_serve_ui)
+    tray_calls = {}
+
+    def fake_run_tray(app, cfg, bus=None, ui_url=None):
+        tray_calls.update(app=app, cfg=cfg, bus=bus, ui_url=ui_url)
+
+    monkeypatch.setattr(tray_mod, "run_tray", fake_run_tray)
+    res = runner.invoke(
+        cli_mod.cli, ["run", "--ui", "--tray", "--config", str(write_config(tmp_path))]
+    )
+    assert res.exit_code == 0, res.output
+    app = fake_app.instances[0]
+    assert tray_calls["app"] is app
+    assert tray_calls["bus"] is serve_calls["bus"]  # the same bus everywhere
+    assert tray_calls["ui_url"] == f"http://127.0.0.1:{app.cfg.ui.web_port}/"
+
+
+def test_run_ui_tray_darwin_keeps_tray_on_main_thread(
+    runner, fake_app, fake_threads, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(cli_mod, "_load_serve_ui", lambda: lambda cfg, **kw: None)
+    tray_calls: list[tuple] = []
+
+    def fake_run_tray(app, cfg, bus=None, ui_url=None):
+        tray_calls.append((app, bus, ui_url))
+
+    monkeypatch.setattr(tray_mod, "run_tray", fake_run_tray)
+    res = runner.invoke(
+        cli_mod.cli, ["run", "--ui", "--tray", "--config", str(write_config(tmp_path))]
+    )
+    assert res.exit_code == 0, res.output
+    app = fake_app.instances[0]
+    # Spawned threads: the UI server, then the app — the tray ran inline
+    # (main thread), exactly like the pre-UI inversion.
+    assert [t.name for t in fake_threads.instances] == ["voicisst-ui", "voicisst"]
+    assert tray_calls and tray_calls[0][0] is app
+    assert isinstance(tray_calls[0][1], StateBus)  # bus reaches the tray
+    assert app.ran
+    assert app.stopped  # tray exit still stops the app
+    assert fake_threads.instances[1].joined
 
 
 # ---------------------------------------------------------------------------
@@ -605,3 +755,174 @@ def test_selftest_hotkey_permission_error_mentions_input_group(
     rc = selftest_mod.run_selftest(cfg, engine=FakeEngine(), audio_seconds=0.01)
     assert rc == 1
     assert "usermod -aG input" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------------------
+# tray: per-state icons (distinct SHAPE as well as color — states must be
+# readable on monochrome themes and without color vision) + live updates.
+# pystray/PIL are faked: tests stay headless and the extras stay optional.
+
+
+def fake_pil_module() -> types.ModuleType:
+    """A PIL stand-in whose images record every draw call made on them."""
+    pil = types.ModuleType("PIL")
+
+    class FakeImage:
+        def __init__(self, mode, size, color=None):
+            self.mode = mode
+            self.size = size
+            self.ops: list[tuple] = []
+
+    class FakeDraw:
+        def __init__(self, image: FakeImage):
+            self._image = image
+
+        def _record(self, op: str, kwargs: dict) -> None:
+            self._image.ops.append((op, tuple(sorted(kwargs.items()))))
+
+        def ellipse(self, xy, **kwargs):
+            self._record("ellipse", kwargs)
+
+        def pieslice(self, xy, start, end, **kwargs):
+            self._record("pieslice", kwargs)
+
+        def polygon(self, xy, **kwargs):
+            self._record("polygon", kwargs)
+
+        def line(self, xy, **kwargs):
+            self._record("line", kwargs)
+
+    pil.Image = SimpleNamespace(new=lambda mode, size, color=None: FakeImage(mode, size, color))
+    pil.ImageDraw = SimpleNamespace(Draw=FakeDraw)
+    return pil
+
+
+def fake_pystray_module() -> types.ModuleType:
+    mod = types.ModuleType("pystray")
+
+    class Menu:
+        def __init__(self, *items):
+            self.items = list(items)
+
+    class MenuItem:
+        def __init__(self, text, action, enabled=True, checked=None):
+            self.text = text
+            self.action = action
+            self.enabled = enabled
+            self.checked = checked
+
+    class Icon:
+        instances: list = []
+        run_hook = staticmethod(lambda icon: None)
+
+        def __init__(self, name, icon=None, title=None, menu=None):
+            self.name = name
+            self.icon = icon
+            self.title = title
+            self.menu = menu
+            Icon.instances.append(self)
+
+        def run(self):
+            type(self).run_hook(self)
+
+        def stop(self):
+            self.stopped = True
+
+    mod.Menu = Menu
+    mod.MenuItem = MenuItem
+    mod.Icon = Icon
+    return mod
+
+
+@pytest.fixture
+def fake_tray_backend(monkeypatch):
+    pystray = fake_pystray_module()
+    monkeypatch.setitem(sys.modules, "PIL", fake_pil_module())
+    monkeypatch.setitem(sys.modules, "pystray", pystray)
+    return pystray
+
+
+def test_tray_state_icons_distinct_shapes_and_colors(fake_tray_backend):
+    images = tray_mod._state_images()
+    assert set(images) == set(events_mod.ALL_STATES)
+    six = [
+        events_mod.IDLE,
+        events_mod.LISTENING,
+        events_mod.TRANSCRIBING,
+        events_mod.POLISHING,
+        events_mod.DELIVERING,
+        events_mod.ERROR,
+    ]
+    # Six distinct image objects with six distinct drawings.
+    assert len({id(images[s]) for s in six}) == 6
+    assert len({tuple(images[s].ops) for s in six}) == 6
+
+    def kinds(state):
+        return [op for op, _ in images[state].ops]
+
+    def first_kwargs(state, op_name):
+        return next(dict(kw) for op, kw in images[state].ops if op == op_name)
+
+    # Shape per state — never color alone.
+    assert kinds(events_mod.IDLE) == ["ellipse"]
+    idle = first_kwargs(events_mod.IDLE, "ellipse")
+    assert "outline" in idle and "fill" not in idle  # hollow ring
+    listening = first_kwargs(events_mod.LISTENING, "ellipse")
+    assert "fill" in listening and "outline" not in listening  # filled circle
+    assert "pieslice" in kinds(events_mod.TRANSCRIBING)  # half-filled circle
+    assert kinds(events_mod.POLISHING) == ["polygon"]  # diamond
+    assert kinds(events_mod.DELIVERING) == ["line"]  # check mark
+    assert kinds(events_mod.ERROR).count("line") == 2  # X
+
+    # Colors are distinct across the six states too.
+    def main_color(state):
+        d = dict(images[state].ops[0][1])
+        return d.get("fill") or d.get("outline")
+
+    assert len({main_color(s) for s in six}) == 6
+    # stopped reuses the idle ring (dictation is simply not running).
+    assert tuple(images[events_mod.STOPPED].ops) == tuple(images[events_mod.IDLE].ops)
+
+
+def test_tray_updates_icon_and_title_per_bus_event(fake_tray_backend, tmp_path):
+    bus = StateBus()
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    snapshots: list[tuple] = []
+
+    def hook(icon):
+        for state in ("listening", "transcribing", "polishing", "delivering", "error"):
+            bus.publish(state, f"detail-{state}")
+            snapshots.append((state, icon.icon, icon.title))
+
+    fake_tray_backend.Icon.run_hook = hook
+    app = SimpleNamespace(stop=lambda: None)
+    tray_mod.run_tray(app, cfg, bus=bus, ui_url="http://127.0.0.1:8766/")
+
+    assert len(snapshots) == 5
+    assert len({id(img) for _, img, _ in snapshots}) == 5  # icon swapped per state
+    for state, _, title in snapshots:
+        assert state in title  # the state is named, not just colored
+    assert "detail-error" in snapshots[-1][2]  # error detail reaches the title
+
+    # run_tray unsubscribed on exit: later events change nothing.
+    icon = fake_tray_backend.Icon.instances[0]
+    bus.publish("idle")
+    assert "error" in icon.title
+
+
+def test_tray_open_settings_ui_menu_item(fake_tray_backend, monkeypatch, tmp_path):
+    cfg = config_mod.load_config(path=tmp_path / "missing.toml", env={})
+    opened: list[str] = []
+    monkeypatch.setattr(tray_mod.webbrowser, "open", lambda url: opened.append(url))
+    app = SimpleNamespace(stop=lambda: None)
+
+    tray_mod.run_tray(app, cfg)  # no ui_url -> no menu entry
+    icon = fake_tray_backend.Icon.instances[-1]
+    assert "Open settings UI" not in [item.text for item in icon.menu.items]
+
+    url = "http://127.0.0.1:8766/"
+    tray_mod.run_tray(app, cfg, ui_url=url)
+    icon = fake_tray_backend.Icon.instances[-1]
+    item = next(i for i in icon.menu.items if i.text == "Open settings UI")
+    item.action(icon, item)
+    assert opened == [url]

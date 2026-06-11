@@ -1,6 +1,6 @@
 # Voicisst installer for Windows (PowerShell 5.1+ / pwsh).
 #
-# Installs voicisst[local,server] as an isolated CLI tool using uv
+# Installs voicisst[local,server,ui] as an isolated CLI tool using uv
 # (preferred) or pipx (installed via pip --user as a fallback). Tries PyPI
 # first; if the package is not published there yet, installs straight from
 # the git repository.
@@ -11,7 +11,7 @@
 $ErrorActionPreference = 'Stop'
 
 $RepoUrl = 'https://github.com/lucyfromnaarm/voicisst'
-$Extras = 'local,server'
+$Extras = 'local,server,ui'
 $PypiSpec = "voicisst[$Extras]"
 $GitSpec = "voicisst[$Extras] @ git+$RepoUrl"
 
@@ -83,7 +83,8 @@ Write-Host @'
      (uv: %USERPROFILE%\.local\bin; pipx: shown by `pipx environment`.
       If `voicisst` is not found, also check your Python user Scripts dir,
       e.g. %APPDATA%\Python\Python312\Scripts.)
-  2. voicisst config init     # write a documented config file
+  2. voicisst ui              # guided setup in your browser
+                              # (or by hand: voicisst config init)
   3. voicisst selftest        # check mic, hotkeys, whisper, polish, injection
   4. voicisst run             # hold the hotkey (right Ctrl), speak, release
 

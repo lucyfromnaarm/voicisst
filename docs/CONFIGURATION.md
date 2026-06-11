@@ -112,7 +112,7 @@ names produce a warning rather than an error.
 |---|---|---|
 | `sample_rate` | `16000` | Capture sample rate in Hz. |
 | `input_device` | `""` | Microphone by name or index; `""` = system default. |
-| `min_record_ms` | `1000` | Recordings shorter than this are dropped silently (filters accidental taps). |
+| `min_record_ms` | `300` | Recordings shorter than this are dropped silently (filters accidental taps; short enough that quick commands like "yes period" survive). |
 | `max_record_ms` | `120000` | Hard cap; recording auto-stops after 2 minutes. |
 | `muted_rms` | `0.00001` | Audio quieter than this triggers the "mic muted?" warning and is dropped. |
 | `rms_gate` | `0.005` | Audio quieter than this (but above `muted_rms`) is treated as silence and dropped without a warning. |
@@ -189,6 +189,8 @@ Settings for `voicisst serve`. See [SERVER.md](SERVER.md).
 | `beep` | `true` | Short tones on start/stop/cancel/error. |
 | `notify` | `true` | Desktop notifications (always also logged to stderr). |
 | `tray` | `false` | Tray icon; needs the extra: `pip install "voicisst[tray]"`. |
+| `web_port` | `8766` | Port for the local web UI (`voicisst ui` / `voicisst run --ui`). The UI always binds to `127.0.0.1` only — this sets just the port. Change it if something else already uses 8766. See [UI.md](UI.md). |
+| `open_browser` | `true` | Open the UI in your default browser when it starts. Set to `false` (or pass `--no-browser`) to only print the URL. |
 
 ## [history]
 
@@ -263,5 +265,7 @@ voicisst run --stream / --no-stream                         # output.stream
 voicisst run --language de                                  # whisper.language
 voicisst run --config /path/to/other.toml                   # alternate config file
 voicisst run --tray                                         # ui.tray=true
+voicisst run --ui                                           # also start the web UI
 voicisst serve --host 0.0.0.0 --port 8765 --token s3cret    # server.*
+voicisst ui --port 9000 --no-browser                        # ui.web_port / ui.open_browser
 ```

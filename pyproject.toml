@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "voicisst"
-version = "0.1.0"
+version = "0.2.0"
 description = "Free, open-source voice dictation: speech to clear, polished writing in every app. Local Whisper + LLM cleanup, client/server or all-in-one."
 readme = "README.md"
 license = { text = "MIT" }

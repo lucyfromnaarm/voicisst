@@ -23,6 +23,7 @@ from helpers import FakeEngine, FakeStreamSession, make_audio
 from voicisst.config import AudioConfig, Config, OutputConfig, load_config
 from voicisst.dictation import DictationApp
 from voicisst.engine.base import EngineError
+from voicisst.events import StateBus
 from voicisst.hotkeys.base import HotkeyListener
 from voicisst.inject.base import Injector
 
@@ -154,6 +155,7 @@ class Harness:
         dur_ms: float = 1500.0,
         chunks: tuple = (),
         window_class: str | None = "code",
+        bus: StateBus | None = None,
     ):
         self.cfg = cfg
         self.engine = engine
@@ -190,6 +192,7 @@ class Harness:
             injector=self.injector,
             listener_factory=listener_factory,
             watchdog_tick_s=0.02,
+            bus=bus,
         )
         self.thread = threading.Thread(target=self._run, daemon=True)
 
@@ -766,4 +769,80 @@ def test_stop_during_polish_cancels_session_and_joins_worker(app_cfg, monkeypatc
         assert "POLISHED LATE" not in h.injector.screen
     finally:
         engine.sessions[0].abort.set()  # never strand the worker on a failure
+        h.finish()
+
+
+# ---------------------------------------------------------------------------
+# StateBus publishing: the tray icon and the web dashboard mirror dictation
+# state. The bus is optional — every other test in this file runs without one.
+
+
+def test_bus_publish_order_for_successful_hold_utterance(app_cfg, monkeypatch):
+    bus = StateBus()
+    seen: list[tuple[str, str]] = []
+    bus.subscribe(lambda ev: seen.append((ev.state, ev.detail)))
+    engine = FakeEngine(supports_stream=False)
+    h = Harness(app_cfg, engine, monkeypatch, bus=bus).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
+        h.listener.on_release()
+        assert wait_until(lambda: h.copied)
+        assert wait_until(lambda: len(seen) >= 6 and seen[-1][0] == "idle")
+        # subscribe() replays the latest event (idle) immediately; after that
+        # the utterance must publish exactly this lifecycle, in order.
+        assert [s for s, _ in seen] == [
+            "idle",  # replayed on subscribe
+            "listening",
+            "transcribing",
+            "polishing",
+            "delivering",
+            "idle",
+        ]
+    finally:
+        h.finish()
+    assert seen[-1][0] == "stopped"  # teardown announces shutdown
+
+
+def test_bus_publish_order_for_too_quiet_rejection(app_cfg, monkeypatch):
+    # Above muted_rms but below the effective gate: an actionable rejection,
+    # so the UI gets an error WITH a plain-language detail, then idle.
+    too_quiet = (make_audio(2.0) * 0.0004).astype(np.float32)  # rms ~7e-5
+    bus = StateBus()
+    seen: list[tuple[str, str]] = []
+    bus.subscribe(lambda ev: seen.append((ev.state, ev.detail)))
+    engine = FakeEngine(supports_stream=False)
+    h = Harness(
+        app_cfg, engine, monkeypatch, audio_arr=too_quiet, dur_ms=2000.0, bus=bus
+    ).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
+        h.listener.on_release()
+        assert wait_until(lambda: len(seen) >= 4 and seen[-1][0] == "idle")
+        assert [s for s, _ in seen] == ["idle", "listening", "error", "idle"]
+        error_detail = next(d for s, d in seen if s == "error")
+        assert "too quiet" in error_detail
+        assert "rms_gate" in error_detail  # tells the user what to adjust
+        assert not h.copied  # nothing was delivered
+    finally:
+        h.finish()
+
+
+def test_broken_bus_never_breaks_dictation(app_cfg, monkeypatch):
+    """A bus whose publish() raises must not take down the worker."""
+
+    class BrokenBus:
+        def publish(self, state: str, detail: str = ""):
+            raise RuntimeError("UI plumbing exploded")
+
+    engine = FakeEngine(supports_stream=False)
+    h = Harness(app_cfg, engine, monkeypatch, bus=BrokenBus()).start()
+    try:
+        h.listener.on_press()
+        assert wait_until(lambda: h.recorder is not None and h.recorder.is_active())
+        h.listener.on_release()
+        assert wait_until(lambda: h.copied)  # the utterance still delivered
+        assert h.copied[0].startswith("polished:raw:")
+    finally:
         h.finish()

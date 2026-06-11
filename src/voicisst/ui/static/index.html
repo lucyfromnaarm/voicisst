@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Voicisst</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header>
+    <p class="brand"><span class="brand-dot" aria-hidden="true"></span> Voicisst</p>
+    <nav aria-label="Main">
+      <ul>
+        <li><a href="#dashboard">Dashboard</a></li>
+        <li><a href="#setup">Setup</a></li>
+        <li><a href="#settings">Settings</a></li>
+        <li><a href="#help">Help</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+    <noscript>
+      <p>This page needs JavaScript to work. It only ever talks to Voicisst on
+      this computer — nothing goes to the internet.</p>
+    </noscript>
+
+    <!-- ================= Dashboard ================= -->
+    <section id="dashboard" aria-labelledby="dashboard-title" hidden>
+      <h1 id="dashboard-title">Dashboard</h1>
+
+      <div class="state-hero">
+        <div id="state-circle" class="state-circle is-off">
+          <span id="state-icon" aria-hidden="true">—</span>
+        </div>
+        <div class="state-text" aria-live="polite">
+          <p id="state-name" class="state-name">Connecting…</p>
+          <p id="state-detail" class="state-detail"></p>
+        </div>
+      </div>
+
+      <p id="conn-note" class="conn-note" role="status"></p>
+
+      <section class="card" aria-labelledby="health-title">
+        <h2 id="health-title">Engine</h2>
+        <dl id="health-list" class="kv"></dl>
+        <p id="health-note" class="help">Not checked yet. The first check can
+        take a little while if the model has to load.</p>
+        <button type="button" id="health-refresh">Check engine</button>
+      </section>
+    </section>
+
+    <!-- ================= Setup wizard ================= -->
+    <section id="setup" aria-labelledby="setup-title" hidden>
+      <h1 id="setup-title" tabindex="-1">Set up Voicisst</h1>
+
+      <div id="wizard">
+        <ol id="wizard-progress" class="wiz-progress">
+          <li data-step="1">Welcome</li>
+          <li data-step="2">Microphone</li>
+          <li data-step="3">Hotkey</li>
+          <li data-step="4">Engine</li>
+          <li data-step="5">Polish</li>
+          <li data-step="6">Permissions</li>
+          <li data-step="7">Finish</li>
+        </ol>
+
+        <section class="wiz-step card" data-step="1" aria-labelledby="wiz1-title">
+          <h2 id="wiz1-title">Welcome</h2>
+          <p>Voicisst turns your speech into clear, polished writing — in any
+          app, wherever your cursor is.</p>
+          <p><strong>Private by design:</strong> everything runs on your own
+          computer. Your voice never leaves it.</p>
+          <p>The next steps check your microphone, hotkey, and helpers. Every
+          step is optional — use <em>Skip</em> freely. You can run this setup
+          again any time from Help.</p>
+        </section>
+
+        <section class="wiz-step card" data-step="2" aria-labelledby="wiz2-title" hidden>
+          <h2 id="wiz2-title">Microphone</h2>
+          <div class="row">
+            <label for="wiz-mic">Which microphone should Voicisst listen to?</label>
+            <select id="wiz-mic">
+              <option value="">System default</option>
+            </select>
+          </div>
+          <div class="btn-row">
+            <button type="button" id="wiz-mic-test">Test microphone</button>
+            <button type="button" id="wiz-mic-refresh" class="ghost">Reload list</button>
+          </div>
+          <p class="help">The test records one second. Say something while it runs.</p>
+          <p id="wiz-mic-result" class="status" role="status"></p>
+        </section>
+
+        <section class="wiz-step card" data-step="3" aria-labelledby="wiz3-title" hidden>
+          <h2 id="wiz3-title">Hotkey</h2>
+          <p>The hotkey starts and stops dictation.
+          Current keys: <strong id="wiz-hotkey-current">…</strong></p>
+          <div class="btn-row">
+            <button type="button" id="wiz-hotkey-capture">Press a key…</button>
+          </div>
+          <p class="help">Click the button, then press the key you want to use.
+          A key you rarely need works best — like a function key.</p>
+          <p id="wiz-hotkey-result" class="status" role="status"></p>
+          <fieldset>
+            <legend>How the hotkey behaves</legend>
+            <div class="choice">
+              <input type="radio" name="wiz-hotkey-mode" id="wiz-mode-hold" checked>
+              <label for="wiz-mode-hold">Hold to talk — keep the key down while you speak</label>
+            </div>
+            <div class="choice">
+              <input type="radio" name="wiz-hotkey-mode" id="wiz-mode-toggle">
+              <label for="wiz-mode-toggle">Tap to start, tap again to stop — no holding needed</label>
+            </div>
+          </fieldset>
+        </section>
+
+        <section class="wiz-step card" data-step="4" aria-labelledby="wiz4-title" hidden>
+          <h2 id="wiz4-title">Engine</h2>
+          <fieldset>
+            <legend>Where should transcription run?</legend>
+            <div class="choice">
+              <input type="radio" name="wiz-engine-mode" id="wiz-engine-local" checked>
+              <label for="wiz-engine-local">On this computer (local)</label>
+            </div>
+            <div class="choice">
+              <input type="radio" name="wiz-engine-mode" id="wiz-engine-remote">
+              <label for="wiz-engine-remote">On another computer (a voicisst server)</label>
+            </div>
+          </fieldset>
+          <div id="wiz-local-opts">
+            <div class="row">
+              <label for="wiz-model">Whisper model</label>
+              <select id="wiz-model">
+                <option value="auto">auto — pick the best for this computer</option>
+                <option value="large-v3-turbo">large-v3-turbo — most accurate, needs a GPU</option>
+                <option value="small">small — light and quick, fine on a CPU</option>
+              </select>
+            </div>
+            <div class="btn-row">
+              <button type="button" id="wiz-warm">Warm up the model</button>
+            </div>
+            <p class="help">Warming up downloads and loads the model so your
+            first dictation is fast. It can take a few minutes the first time.</p>
+            <p id="wiz-warm-result" class="status" role="status"></p>
+          </div>
+          <div id="wiz-remote-opts" hidden>
+            <div class="row">
+              <label for="wiz-server-url">Server address</label>
+              <input type="text" id="wiz-server-url" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="row">
+              <label for="wiz-server-token">Server token</label>
+              <input type="text" id="wiz-server-token" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="btn-row">
+              <button type="button" id="wiz-health-check">Check connection</button>
+            </div>
+            <p class="help">The check uses your saved settings. If you just typed
+            a new address, finish setup first, then come back and check.</p>
+            <p id="wiz-health-result" class="status" role="status"></p>
+          </div>
+        </section>
+
+        <section class="wiz-step card" data-step="5" aria-labelledby="wiz5-title" hidden>
+          <h2 id="wiz5-title">Polish</h2>
+          <p>Polish tidies up what you said: it removes “um” and “uh”, applies
+          self-corrections, and adds punctuation.</p>
+          <fieldset>
+            <legend>Clean up your words?</legend>
+            <div class="choice">
+              <input type="radio" name="wiz-polish" id="wiz-polish-ollama" checked>
+              <label for="wiz-polish-ollama">Yes, with Ollama on this computer</label>
+            </div>
+            <div class="choice">
+              <input type="radio" name="wiz-polish" id="wiz-polish-openai">
+              <label for="wiz-polish-openai">Yes, with an OpenAI-compatible server</label>
+            </div>
+            <div class="choice">
+              <input type="radio" name="wiz-polish" id="wiz-polish-none">
+              <label for="wiz-polish-none">No polish — keep my words exactly as spoken</label>
+            </div>
+          </fieldset>
+          <div id="wiz-polish-opts">
+            <div class="row">
+              <label for="wiz-polish-model">Model</label>
+              <input type="text" id="wiz-polish-model" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="row">
+              <label for="wiz-polish-url">Address</label>
+              <input type="text" id="wiz-polish-url" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="btn-row">
+              <button type="button" id="wiz-polish-test">Test polish</button>
+            </div>
+            <p class="help">The test sends a short, messy sample sentence and
+            shows what comes back.</p>
+            <p id="wiz-polish-result" class="status" role="status"></p>
+          </div>
+        </section>
+
+        <section class="wiz-step card" data-step="6" aria-labelledby="wiz6-title" hidden>
+          <h2 id="wiz6-title">Permissions</h2>
+          <div id="wiz-perm-linux" hidden>
+            <h3>Linux</h3>
+            <p>Two one-time permissions let Voicisst see your hotkey and type
+            for you:</p>
+            <ol>
+              <li>Join the <code>input</code> group so the hotkey works
+              everywhere:<br>
+              <code>sudo usermod -aG input $USER</code><br>
+              Then log out and back in once.</li>
+              <li>Start the typing helper:<br>
+              <code>systemctl --user enable --now ydotoold</code></li>
+            </ol>
+          </div>
+          <div id="wiz-perm-darwin" hidden>
+            <h3>macOS</h3>
+            <p>macOS asks you to approve three things, once each. Open
+            <strong>System Settings → Privacy &amp; Security</strong>, then add
+            the app you run Voicisst from (usually your terminal) to:</p>
+            <ol>
+              <li><strong>Accessibility</strong> — lets Voicisst type into other apps.</li>
+              <li><strong>Input Monitoring</strong> — lets the hotkey work everywhere.</li>
+              <li><strong>Microphone</strong> — lets Voicisst hear you.</li>
+            </ol>
+          </div>
+          <div id="wiz-perm-win" hidden>
+            <h3>Windows</h3>
+            <p>Nothing special is needed on Windows. You can move on.</p>
+          </div>
+        </section>
+
+        <section class="wiz-step card" data-step="7" aria-labelledby="wiz7-title" hidden>
+          <h2 id="wiz7-title">Finish</h2>
+          <p>Here is what will be saved:</p>
+          <ul id="wiz-summary" class="summary"></ul>
+          <div class="btn-row">
+            <button type="button" id="wiz-finish">Save my choices</button>
+          </div>
+          <p id="wiz-finish-result" class="status" aria-live="polite"></p>
+          <p>Next: open a terminal and run <code>voicisst run</code> — then
+          press your hotkey in any app and start talking.</p>
+        </section>
+
+        <div class="wiz-nav">
+          <button type="button" id="wiz-back" class="ghost">Back</button>
+          <button type="button" id="wiz-skip" class="ghost">Skip this step</button>
+          <button type="button" id="wiz-next">Next</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Settings ================= -->
+    <section id="settings" aria-labelledby="settings-title" hidden>
+      <h1 id="settings-title">Settings</h1>
+      <p class="help">Saved to <code id="settings-path">…</code>. Dictation
+      picks up changes the next time it starts.</p>
+
+      <div class="row-check show-all">
+        <input type="checkbox" id="show-all">
+        <label for="show-all">Show all settings</label>
+        <p class="help">Settings that do not apply to your current setup are
+        hidden. Turn this on to see everything anyway.</p>
+      </div>
+
+      <form id="settings-form" novalidate>
+        <div id="settings-sections"></div>
+        <div class="save-bar">
+          <button type="submit" id="settings-save" disabled>Save changes</button>
+          <p id="save-status" class="status" aria-live="polite"></p>
+        </div>
+      </form>
+
+      <details class="card raw-details">
+        <summary>Edit the raw config file (advanced)</summary>
+        <div class="row">
+          <label for="raw-toml">Config file contents (TOML)</label>
+          <textarea id="raw-toml" rows="18" spellcheck="false"
+            autocomplete="off" autocapitalize="off"></textarea>
+        </div>
+        <div class="save-bar">
+          <button type="button" id="raw-save" disabled>Save file</button>
+          <p id="raw-status" class="status" role="status"></p>
+        </div>
+      </details>
+    </section>
+
+    <!-- ================= Help ================= -->
+    <section id="help" aria-labelledby="help-title" hidden>
+      <h1 id="help-title">Help</h1>
+      <ul class="help-links">
+        <li><a href="https://github.com/lucyfromnaarm/voicisst" rel="noreferrer">Read
+        the Voicisst guides on GitHub</a></li>
+        <li><a href="#setup" id="help-rerun">Run the setup steps again</a></li>
+      </ul>
+
+      <section class="card" aria-labelledby="fixes-title">
+        <h2 id="fixes-title">Quick fixes</h2>
+        <ul class="fixes">
+          <li><strong>The hotkey does nothing.</strong> Make sure dictation is
+          running (<code>voicisst run</code>). On Linux, you may need to join
+          the <code>input</code> group — see Setup → Permissions.</li>
+          <li><strong>My words come out empty or wrong.</strong> Test the
+          microphone in Setup — it may be muted or very quiet.</li>
+          <li><strong>Polish is slow.</strong> Pick a smaller polish model in
+          Settings, or turn polish off — you still get the raw transcript.</li>
+          <li><strong>The dashboard says “Not running”.</strong> Start
+          dictation with <code>voicisst run --ui</code>.</li>
+        </ul>
+      </section>
+
+      <p class="help">Voicisst version <span id="help-version">…</span> ·
+      Settings file: <code id="help-config-path">…</code></p>
+    </section>
+  </main>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>
