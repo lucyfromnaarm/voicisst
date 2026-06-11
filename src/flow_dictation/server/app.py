@@ -7,6 +7,7 @@ run in a threadpool — the event loop stays responsive while Whisper works.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import sys
 from contextlib import suppress
@@ -17,6 +18,8 @@ import numpy as np
 from .. import __version__
 from ..engine.base import Engine, EngineError
 from ..protocol import (
+    MAX_AUDIO_BYTES,
+    MAX_AUDIO_SAMPLES,
     MSG_CANCEL,
     MSG_ERROR,
     MSG_FINAL,
@@ -60,10 +63,16 @@ def create_app(engine: Engine, *, token: str = "") -> FastAPI:
 
     # -- helpers ------------------------------------------------------------
 
+    def _token_ok(supplied: str) -> bool:
+        # Constant-time comparison: never leak the token via timing.
+        return hmac.compare_digest(supplied.encode("utf-8"), token.encode("utf-8"))
+
     def _require_auth(request: Request) -> None:
         if not token:
             return
-        if request.headers.get("authorization", "") != f"Bearer {token}":
+        supplied = request.headers.get("authorization", "")
+        prefix = "Bearer "
+        if not (supplied.startswith(prefix) and _token_ok(supplied[len(prefix) :])):
             raise HTTPException(
                 status_code=401,
                 detail={
@@ -73,7 +82,24 @@ def create_app(engine: Engine, *, token: str = "") -> FastAPI:
                 },
             )
 
+    def _payload_too_large(n_bytes: int, what: str) -> HTTPException:
+        return HTTPException(
+            status_code=413,
+            detail={
+                "message": f"{what} is {n_bytes} bytes, over the flow server's "
+                f"{MAX_AUDIO_BYTES}-byte audio cap (~120 s of audio)",
+                "hint": "send shorter utterances, or split long recordings "
+                "into multiple /v1/transcribe requests",
+            },
+        )
+
     async def _json_body(request: Request) -> dict[str, Any]:
+        # Reject oversized bodies before reading them into memory. The limit
+        # is the audio cap plus base64 (4/3) expansion and JSON envelope room.
+        body_cap = MAX_AUDIO_BYTES * 4 // 3 + 65536
+        content_length = request.headers.get("content-length", "")
+        if content_length.isdigit() and int(content_length) > body_cap:
+            raise _payload_too_large(int(content_length), "request body")
         try:
             data = await request.json()
         except Exception as e:
@@ -92,8 +118,16 @@ def create_app(engine: Engine, *, token: str = "") -> FastAPI:
                 detail="missing 'audio_b64' — base64 of a 16-bit PCM mono WAV "
                 "(see protocol.encode_wav)",
             )
+        if len(b64) > MAX_AUDIO_BYTES * 4 // 3 + 4:  # cap before decoding
+            raise _payload_too_large(len(b64) * 3 // 4, "decoded audio payload")
         try:
-            return decode_wav(from_b64(b64))
+            wav = from_b64(b64)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        if len(wav) > MAX_AUDIO_BYTES:
+            raise _payload_too_large(len(wav), "decoded audio payload")
+        try:
+            return decode_wav(wav)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -174,22 +208,18 @@ def create_app(engine: Engine, *, token: str = "") -> FastAPI:
 
     @app.websocket("/v1/stream")
     async def stream(ws: WebSocket) -> None:
-        supplied = ws.query_params.get("token", "")
-        if not supplied:
-            auth = ws.headers.get("authorization", "")
-            if auth.startswith("Bearer "):
-                supplied = auth[len("Bearer ") :]
-        if token and supplied != token:
-            await ws.accept()
+        # Prefer the Authorization header (it stays out of access logs);
+        # ?token= is still accepted for older clients.
+        auth = ws.headers.get("authorization", "")
+        if auth.startswith("Bearer "):
+            supplied = auth[len("Bearer ") :]
+        else:
+            supplied = ws.query_params.get("token", "")
+        if token and not _token_ok(supplied):
+            # Deny the upgrade before accept(): uvicorn turns this into an
+            # HTTP 403 handshake rejection, so clients fail at connect time
+            # instead of after dictating a whole utterance.
             with suppress(Exception):
-                await ws.send_json(
-                    {
-                        "type": MSG_ERROR,
-                        "message": "unauthorized",
-                        "hint": "connect with ?token=<token> matching the server's "
-                        "`flow serve --token <token>`",
-                    }
-                )
                 await ws.close(code=4401)
             return
         await ws.accept()
@@ -234,6 +264,22 @@ def create_app(engine: Engine, *, token: str = "") -> FastAPI:
                     if pcm.size:
                         chunks.append(pcm)
                         total += int(pcm.size)
+                    if total > MAX_AUDIO_SAMPLES:
+                        if task is not None:
+                            task.cancel()
+                        with suppress(Exception):
+                            await ws.send_json(
+                                {
+                                    "type": MSG_ERROR,
+                                    "message": "stream exceeded the audio cap "
+                                    f"({total} samples > {MAX_AUDIO_SAMPLES}, "
+                                    "~120 s of audio)",
+                                    "hint": "finalize or cancel sooner — flow caps "
+                                    "one streamed utterance to bound server memory",
+                                }
+                            )
+                            await ws.close(code=1009)  # message too big
+                        return
                     if (task is None or task.done()) and (
                         total - passed >= int(_PARTIAL_STEP_S * sample_rate)
                     ):

@@ -16,6 +16,13 @@ import sys
 _EXPIRE_MS = 3000
 _VALID_URGENCIES = ("low", "normal", "critical")
 
+# Windows toasts are silently dropped unless CreateToastNotifier is given a
+# *registered* AppUserModelID. Flow doesn't install one, so borrow Windows
+# PowerShell's AUMID, which every Windows installation registers.
+_WIN_PS_AUMID = (
+    "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe"
+)
+
 
 def notify(summary: str, body: str = "", urgency: str = "low", *, enabled: bool = True) -> None:
     """Log to stderr; optionally show a best-effort desktop notification."""
@@ -37,7 +44,13 @@ def notify(summary: str, body: str = "", urgency: str = "low", *, enabled: bool 
 
 def _spawn(cmd: list[str]) -> None:
     """Fire-and-forget: never block dictation on a notification daemon."""
-    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        # No console-window flash on Windows; harmless 0 elsewhere.
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
 
 
 def _notify_linux(summary: str, body: str, urgency: str) -> None:
@@ -81,7 +94,8 @@ def _notify_windows(summary: str, body: str) -> None:
         "$t=$x.GetElementsByTagName('text');"
         f"[void]$t.Item(0).AppendChild($x.CreateTextNode('{_ps_escape(summary)}'));"
         f"[void]$t.Item(1).AppendChild($x.CreateTextNode('{_ps_escape(body)}'));"
-        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Flow')"
+        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("
+        f"'{_WIN_PS_AUMID}')"
         ".Show([Windows.UI.Notifications.ToastNotification]::new($x));"
     )
     try:

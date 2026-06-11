@@ -20,10 +20,12 @@ from . import config as config_mod
 from .dictation import DictationApp
 from .engine import EngineError, get_engine
 
+# exists=True: a typo'd --config must error (exit 2), not silently fall back
+# to defaults — load_config tolerates a missing *default* path by design.
 _CONFIG_OPTION = click.option(
     "--config",
     "config_file",
-    type=click.Path(path_type=Path),
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
     metavar="PATH",
     help="Config file to use (default: `flow config path`).",
@@ -93,12 +95,27 @@ def run(
     cfg = config_mod.load_config(path=config_file, overrides=overrides)
     engine = get_engine(cfg)
     app = DictationApp(cfg, engine)
-    if cfg.ui.tray:
-        from .tray import run_tray
+    if not cfg.ui.tray:
+        app.run()
+        return
+    from .tray import run_tray
 
-        threading.Thread(
-            target=run_tray, args=(app, cfg), name="flow-tray", daemon=True
-        ).start()
+    if sys.platform == "darwin":
+        # pystray's AppKit backend must own the MAIN thread on macOS, so the
+        # arrangement is inverted there: dictation runs in a background thread
+        # and the tray blocks here. When the tray exits (Quit or Ctrl+C) the
+        # app is stopped so its teardown still runs.
+        app_thread = threading.Thread(target=app.run, name="flow-dictation", daemon=True)
+        app_thread.start()
+        try:
+            run_tray(app, cfg)
+        except KeyboardInterrupt:
+            print("\nflow: shutting down", file=sys.stderr)
+        finally:
+            app.stop()
+            app_thread.join(timeout=5.0)
+        return
+    threading.Thread(target=run_tray, args=(app, cfg), name="flow-tray", daemon=True).start()
     app.run()
 
 

@@ -192,22 +192,21 @@ def test_ws_cancel_closes(client: TestClient, engine: FakeEngine) -> None:
     assert not any(c[0] == "polish_stream" for c in engine.calls)
 
 
-def test_ws_auth_rejected(auth_client: TestClient) -> None:
-    with auth_client.websocket_connect("/v1/stream?token=wrong") as ws:
-        msg = ws.receive_json()
-        assert msg["type"] == "error"
-        assert "unauthorized" in msg["message"]
-        with pytest.raises(WebSocketDisconnect) as ei:
-            ws.receive_json()
-        assert ei.value.code == 4401
+def test_ws_auth_rejected_before_accept(auth_client: TestClient) -> None:
+    # A bad token must deny the upgrade outright (real uvicorn turns the
+    # pre-accept close into an HTTP 403 handshake rejection) — the client
+    # must not be able to dictate a whole utterance first.
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with auth_client.websocket_connect("/v1/stream?token=wrong"):
+            pass
+    assert ei.value.code == 4401
 
 
 def test_ws_auth_missing_token_rejected(auth_client: TestClient) -> None:
-    with auth_client.websocket_connect("/v1/stream") as ws:
-        assert ws.receive_json()["type"] == "error"
-        with pytest.raises(WebSocketDisconnect) as ei:
-            ws.receive_json()
-        assert ei.value.code == 4401
+    with pytest.raises(WebSocketDisconnect) as ei:
+        with auth_client.websocket_connect("/v1/stream"):
+            pass
+    assert ei.value.code == 4401
 
 
 def test_ws_auth_query_token_accepted(auth_client: TestClient) -> None:
@@ -222,6 +221,90 @@ def test_ws_auth_header_accepted(auth_client: TestClient) -> None:
     ) as ws:
         ws.send_json({"type": "finalize"})
         assert ws.receive_json()["type"] == "final"
+
+
+def test_ws_auth_header_preferred_over_query(auth_client: TestClient) -> None:
+    # When both are sent, the Authorization header wins (clients should
+    # never put the token in the URL — it leaks into access logs).
+    with auth_client.websocket_connect(
+        "/v1/stream?token=wrong", headers={"Authorization": f"Bearer {TOKEN}"}
+    ) as ws:
+        ws.send_json({"type": "finalize"})
+        assert ws.receive_json()["type"] == "final"
+
+
+def test_token_comparison_is_constant_time() -> None:
+    # Behavioral timing tests are flaky; assert the timing-safe primitive is
+    # actually what the auth checks use.
+    import inspect
+
+    from flow_dictation.server import app as app_module
+
+    src = inspect.getsource(app_module)
+    assert "hmac.compare_digest" in src
+    assert "!= f\"Bearer" not in src  # no plain comparison left behind
+
+
+# ---------------------------------------------------------------------------
+# Size caps (memory-exhaustion DoS protection)
+
+
+def test_rest_413_over_audio_cap(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("flow_dictation.server.app.MAX_AUDIO_BYTES", 1000)
+    wav = make_wav(0.5, 16000)  # 16 kB WAV, over the (patched) 1000-byte cap
+    for path in ("/v1/transcribe", "/v1/process"):
+        r = client.post(path, json={"audio_b64": to_b64(wav)})
+        assert r.status_code == 413
+        detail = r.json()["detail"]
+        assert "cap" in detail["message"]
+        assert "shorter" in detail["hint"]
+
+
+def test_rest_413_content_length_checked_early(
+    client: TestClient, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("flow_dictation.server.app.MAX_AUDIO_BYTES", 1000)
+    # Body over cap*4/3 + 64 KiB: rejected from the Content-Length header
+    # alone, before the body is parsed or any engine call happens.
+    r = client.post("/v1/polish", json={"text": "x" * 70000})
+    assert r.status_code == 413
+    assert "cap" in r.json()["detail"]["message"]
+    assert engine.calls == []
+
+
+def test_rest_audio_under_cap_accepted(client: TestClient) -> None:
+    # The real cap (~32 MiB) must not get in the way of normal utterances.
+    r = client.post("/v1/transcribe", json={"audio_b64": to_b64(make_wav(2.0, 16000))})
+    assert r.status_code == 200
+
+
+def test_ws_audio_cap_sends_error_and_closes(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("flow_dictation.server.app.MAX_AUDIO_SAMPLES", 8000)
+    with client.websocket_connect("/v1/stream") as ws:
+        ws.send_json({"type": "start", "sample_rate": 16000, "language": None, "vocab": ""})
+        ws.send_bytes(_pcm_bytes(8001))  # one sample over the cap
+        msg = ws.receive_json()
+        assert msg["type"] == "error"
+        assert "cap" in msg["message"]
+        with pytest.raises(WebSocketDisconnect) as ei:
+            ws.receive_json()
+        assert ei.value.code == 1009  # message too big
+
+
+def test_ws_audio_under_cap_streams_fine(client: TestClient) -> None:
+    with client.websocket_connect("/v1/stream") as ws:
+        ws.send_json({"type": "start", "sample_rate": 16000, "language": None, "vocab": ""})
+        ws.send_bytes(_pcm_bytes(16000))  # 1 s, far under the ~32 MiB cap
+        ws.send_json({"type": "finalize"})
+        while True:
+            msg = ws.receive_json()
+            if msg["type"] == "final":
+                break
+    assert msg["raw"] == "raw:16000@16000:None:"
 
 
 # ---------------------------------------------------------------------------

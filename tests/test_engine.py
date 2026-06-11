@@ -452,8 +452,16 @@ def test_remote_requires_url(cfg: Config) -> None:
 # RemoteEngine — websocket stream (fake `websocket` module)
 
 
+class FakeWSTimeout(Exception):
+    """Stands in for websocket.WebSocketTimeoutException."""
+
+
 class FakeWS:
-    """Scripted server: replies to finalize with polish/polish/final."""
+    """Scripted server: replies to finalize with polish/polish/final.
+
+    Exception instances put on `incoming` are raised from recv(), so tests
+    can script recv timeouts and connection drops.
+    """
 
     def __init__(self) -> None:
         import queue
@@ -463,10 +471,18 @@ class FakeWS:
         self.incoming: queue.Queue = queue.Queue()
         self.closed = False
         self.respond_to_finalize = True
+        self.error_on_start = False  # old-server behavior: accept, then error
 
     def send(self, data: str) -> None:
         self.sent.append(data)
         msg = json.loads(data)
+        if msg.get("type") == "start" and self.error_on_start:
+            self.incoming.put(
+                json.dumps(
+                    {"type": "error", "message": "unauthorized", "hint": "check the token"}
+                )
+            )
+            self.incoming.put(None)  # old servers close right after the error
         if msg.get("type") == "finalize" and self.respond_to_finalize:
             self.incoming.put(json.dumps({"type": "polish", "text": "Polishing…"}))
             self.incoming.put(json.dumps({"type": "polish", "text": "Polished."}))
@@ -481,6 +497,8 @@ class FakeWS:
         item = self.incoming.get(timeout=5)
         if item is None:
             raise RuntimeError("connection closed")
+        if isinstance(item, Exception):
+            raise item
         return item
 
     def close(self, *args: object, **kwargs: object) -> None:
@@ -494,16 +512,25 @@ def fake_websocket(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     created: dict[str, Any] = {}
     mod = types.ModuleType("websocket")
 
-    def create_connection(url: str, timeout: float | None = None) -> FakeWS:
+    def create_connection(
+        url: str, timeout: float | None = None, header: list[str] | None = None
+    ) -> FakeWS:
         if created.get("refuse"):
             raise ConnectionRefusedError("connection refused")
+        if created.get("reject_status"):
+            err = RuntimeError(f"Handshake status {created['reject_status']}")
+            err.status_code = created["reject_status"]  # type: ignore[attr-defined]
+            raise err
         created["url"] = url
         created["timeout"] = timeout
+        created["header"] = header
         ws = FakeWS()
+        ws.error_on_start = bool(created.get("error_on_start"))
         created["ws"] = ws
         return ws
 
     mod.create_connection = create_connection  # type: ignore[attr-defined]
+    mod.WebSocketTimeoutException = FakeWSTimeout  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "websocket", mod)
     return created
 
@@ -525,7 +552,7 @@ def test_remote_ws_session_full_flow(
     session = engine.open_stream(16000, vocab="V")
     assert session is not None
     ws: FakeWS = fake_websocket["ws"]
-    assert fake_websocket["url"] == "ws://box:8765/v1/stream?token=sekrit"
+    assert fake_websocket["url"] == "ws://box:8765/v1/stream"
     start = json.loads(ws.sent[0])
     assert start == {"type": "start", "sample_rate": 16000, "language": None, "vocab": "V"}
 
@@ -605,3 +632,82 @@ def test_remote_ws_session_runs_reader_thread(
     assert isinstance(session._reader, threading.Thread)
     assert session._reader.daemon
     session.close()
+
+
+def test_remote_ws_token_in_header_not_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_websocket: dict[str, Any]
+) -> None:
+    # The bearer token must never appear in the URL (it would leak into
+    # uvicorn access logs); it travels in the Authorization header instead.
+    engine, _ = _remote(tmp_path, monkeypatch, [], token="sekrit")
+    session = engine.open_stream(16000)
+    assert fake_websocket["url"] == "ws://box:8765/v1/stream"
+    assert "token" not in fake_websocket["url"]
+    assert "sekrit" not in fake_websocket["url"]
+    assert fake_websocket["header"] == ["Authorization: Bearer sekrit"]
+    session.close()
+
+
+def test_remote_ws_no_token_no_auth_header(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_websocket: dict[str, Any]
+) -> None:
+    engine, _ = _remote(tmp_path, monkeypatch, [], token="")
+    session = engine.open_stream(16000)
+    assert fake_websocket["header"] == []
+    session.close()
+
+
+def test_remote_ws_reader_survives_recv_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_websocket: dict[str, Any]
+) -> None:
+    # A frame-quiet gap longer than request_timeout makes recv() raise a
+    # timeout; the reader must keep waiting instead of dying permanently.
+    engine, _ = _remote(tmp_path, monkeypatch, [])
+    session = engine.open_stream(16000)
+    ws: FakeWS = fake_websocket["ws"]
+    ws.incoming.put(FakeWSTimeout("recv timed out"))
+    ws.incoming.put(json.dumps({"type": "partial", "text": "still alive"}))
+    assert _wait_for(session.partial) == "still alive"
+    assert session._reader.is_alive()
+    assert list(session.finalize()) == ["Polishing…", "Polished."]
+
+
+def test_remote_ws_reader_survives_socket_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_websocket: dict[str, Any]
+) -> None:
+    # socket.timeout is an alias of TimeoutError since Python 3.10.
+    engine, _ = _remote(tmp_path, monkeypatch, [])
+    session = engine.open_stream(16000)
+    ws: FakeWS = fake_websocket["ws"]
+    ws.incoming.put(TimeoutError("timed out"))
+    ws.incoming.put(json.dumps({"type": "partial", "text": "ok"}))
+    assert _wait_for(session.partial) == "ok"
+    assert session._reader.is_alive()
+    session.close()
+
+
+def test_remote_ws_handshake_rejection_maps_to_token_hint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_websocket: dict[str, Any]
+) -> None:
+    # New servers deny the upgrade before accept -> HTTP 403 at connect time.
+    fake_websocket["reject_status"] = 403
+    engine, _ = _remote(tmp_path, monkeypatch, [], token="WRONG")
+    with pytest.raises(EngineError, match="unauthorized") as ei:
+        engine.open_stream(16000)
+    assert "--token" in ei.value.hint
+
+
+def test_remote_ws_open_fails_fast_on_early_error_frame(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_websocket: dict[str, Any]
+) -> None:
+    # Old servers accept the socket, then send an error frame and close.
+    # open_stream must surface that immediately instead of letting the user
+    # dictate a whole utterance first.
+    fake_websocket["error_on_start"] = True
+    engine, _ = _remote(tmp_path, monkeypatch, [], token="WRONG")
+    t0 = time.monotonic()
+    with pytest.raises(EngineError, match="unauthorized") as ei:
+        engine.open_stream(16000)
+    assert time.monotonic() - t0 < 2.0  # fast, not a request_timeout wait
+    assert ei.value.hint == "check the token"
+    assert fake_websocket["ws"].closed

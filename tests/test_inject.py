@@ -11,8 +11,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_dictation import notify as notify_mod
 from flow_dictation.config import OutputConfig, load_config
 from flow_dictation.inject import get_injector
+from flow_dictation.inject import pynput_injector as pyn_mod
 from flow_dictation.inject import windowinfo as wi
 from flow_dictation.inject import xdotool as xdo_mod
 from flow_dictation.inject import ydotool as ydo_mod
@@ -434,6 +436,181 @@ def test_pynput_escape(fake_pynput):
     inj = PynputInjector(OutputConfig())
     assert inj.tap_escape() is True
     assert fake_pynput == [("press", FakeKey.esc), ("release", FakeKey.esc)]
+
+
+# -- astral (non-BMP) characters ------------------------------------------
+#
+# pynput's win32 backend raises ValueError for ord(char) > 0xFFFF and
+# Controller.type() aborts mid-string. type_text must pre-filter astral
+# chars on win32 (screen == what we attempted, mirror stays honest) and
+# keep them everywhere else.
+
+
+def test_pynput_win32_drops_astral_chars(monkeypatch, fake_pynput):
+    monkeypatch.setattr(sys, "platform", "win32")
+    inj = PynputInjector(OutputConfig(newline_mode="enter"))
+    assert inj.type_text("a\U0001f600b\nc\U0001f4a9d") is True
+    assert fake_pynput == [
+        ("type", "ab"),
+        ("press", FakeKey.enter),
+        ("release", FakeKey.enter),
+        ("type", "cd"),
+    ]
+
+
+def test_pynput_win32_astral_only_text_types_nothing_returns_true(monkeypatch, fake_pynput):
+    monkeypatch.setattr(sys, "platform", "win32")
+    inj = PynputInjector(OutputConfig())
+    assert inj.type_text("\U0001f600\U0001f680") is True
+    assert fake_pynput == []  # nothing attempted, truthfully "all attempted" typed
+
+
+def test_pynput_win32_strict_controller_never_sees_astral(monkeypatch):
+    """Simulate the real pynput-win32 Controller: raises on the first
+    non-BMP char, having already typed the prefix (the desync this finding
+    is about). With pre-filtering it must never get the chance."""
+    typed: list[str] = []
+
+    class Win32Controller:
+        def type(self, s):
+            for i, c in enumerate(s):
+                if ord(c) > 0xFFFF:
+                    typed.append(s[:i])  # prefix reached the screen anyway
+                    raise ValueError(f"unsupported character: {c!r}")
+            typed.append(s)
+
+        def press(self, k):
+            pass
+
+        def release(self, k):
+            pass
+
+    kb_mod = types.ModuleType("pynput.keyboard")
+    kb_mod.Controller = Win32Controller
+    kb_mod.Key = FakeKey
+    pkg = types.ModuleType("pynput")
+    pkg.keyboard = kb_mod
+    monkeypatch.setitem(sys.modules, "pynput", pkg)
+    monkeypatch.setitem(sys.modules, "pynput.keyboard", kb_mod)
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    inj = PynputInjector(OutputConfig())
+    assert inj.type_text("héllo \U0001f600 world") is True
+    assert typed == ["héllo  world"]
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_pynput_non_windows_keeps_astral_chars(monkeypatch, fake_pynput, platform):
+    # macOS CGEventKeyboardSetUnicodeString (and X11) handle non-BMP text.
+    monkeypatch.setattr(sys, "platform", platform)
+    monkeypatch.setattr(pyn_mod, "_trust_probe_done", True)  # isolate from probe
+    inj = PynputInjector(OutputConfig())
+    assert inj.type_text("a\U0001f600b") is True
+    assert fake_pynput == [("type", "a\U0001f600b")]
+
+
+# -- macOS Accessibility trust probe ---------------------------------------
+#
+# CGEventPost without Accessibility permission is dropped silently while
+# type/paste return True. The first injection on darwin probes
+# AXIsProcessTrusted and surfaces the hint exactly once.
+
+
+@pytest.fixture
+def notify_spy(monkeypatch):
+    calls: list[tuple[str, str, str]] = []
+
+    def fake_notify(summary, body="", urgency="low", *, enabled=True):
+        calls.append((summary, body, urgency))
+
+    monkeypatch.setattr(notify_mod, "notify", fake_notify)
+    return calls
+
+
+def test_pynput_darwin_untrusted_hints_once(monkeypatch, fake_pynput, notify_spy):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(pyn_mod, "_trust_probe_done", False)
+    probes: list[int] = []
+
+    def fake_probe():
+        probes.append(1)
+        return False
+
+    monkeypatch.setattr(pyn_mod, "_darwin_ax_trusted", fake_probe)
+
+    inj = PynputInjector(OutputConfig())
+    assert inj.type_text("hi") is True  # injection itself still proceeds
+    assert inj.paste_chord() is True
+    inj2 = PynputInjector(OutputConfig())  # second instance: still no spam
+    assert inj2.backspace(1) is True
+
+    assert probes == [1]
+    assert len(notify_spy) == 1
+    summary, body, urgency = notify_spy[0]
+    assert "Accessibility" in summary
+    assert "Privacy & Security" in body  # actionable fix path is included
+    assert urgency == "critical"
+
+
+def test_pynput_darwin_trusted_no_hint(monkeypatch, fake_pynput, notify_spy):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(pyn_mod, "_trust_probe_done", False)
+    monkeypatch.setattr(pyn_mod, "_darwin_ax_trusted", lambda: True)
+    inj = PynputInjector(OutputConfig())
+    assert inj.type_text("hi") is True
+    assert notify_spy == []
+
+
+def test_pynput_darwin_unprobeable_stays_quiet(monkeypatch, fake_pynput, notify_spy):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(pyn_mod, "_trust_probe_done", False)
+    monkeypatch.setattr(pyn_mod, "_darwin_ax_trusted", lambda: None)
+    inj = PynputInjector(OutputConfig())
+    assert inj.type_text("hi") is True
+    assert notify_spy == []
+
+
+def test_pynput_trust_probe_never_runs_off_darwin(monkeypatch, fake_pynput, notify_spy):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr(pyn_mod, "_trust_probe_done", False)
+    probes: list[int] = []
+    monkeypatch.setattr(pyn_mod, "_darwin_ax_trusted", lambda: probes.append(1) or False)
+    inj = PynputInjector(OutputConfig())
+    assert inj.type_text("hi") is True
+    assert probes == []
+    assert notify_spy == []
+
+
+def test_pynput_darwin_probe_crash_does_not_break_typing(monkeypatch, fake_pynput, notify_spy):
+    # The probe is guarded: even if it explodes, injection succeeds and the
+    # crash is never retried (flag is set before probing).
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(pyn_mod, "_trust_probe_done", False)
+    monkeypatch.setattr(
+        pyn_mod, "_darwin_ax_trusted", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    inj = PynputInjector(OutputConfig())
+    assert inj.type_text("hi") is True
+    assert pyn_mod._trust_probe_done is True
+    assert inj.type_text("again") is True
+    assert notify_spy == []  # unknown trust state: no hint
+
+
+def test_darwin_ax_trusted_via_fake_hiservices(monkeypatch):
+    fake = types.ModuleType("HIServices")
+    fake.AXIsProcessTrusted = lambda: False
+    monkeypatch.setitem(sys.modules, "HIServices", fake)
+    assert pyn_mod._darwin_ax_trusted() is False
+    fake.AXIsProcessTrusted = lambda: 1  # truthy non-bool is normalized
+    assert pyn_mod._darwin_ax_trusted() is True
+
+
+def test_darwin_ax_trusted_unprobeable_returns_none(monkeypatch):
+    import ctypes.util
+
+    monkeypatch.setitem(sys.modules, "HIServices", None)  # forces ImportError
+    monkeypatch.setattr(ctypes.util, "find_library", lambda name: None)
+    assert pyn_mod._darwin_ax_trusted() is None
 
 
 def test_pynput_errors_return_false(monkeypatch):

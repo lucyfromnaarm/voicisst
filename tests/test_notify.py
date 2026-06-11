@@ -97,6 +97,11 @@ def test_darwin_escapes_backslashes_before_quotes(
     assert "C:\\\\tmp" in script
 
 
+# The AUMID Windows registers for Windows PowerShell; toasts from an
+# unregistered AUMID (e.g. a bare 'Flow') are silently dropped.
+_PS_AUMID = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe"
+
+
 def test_windows_powershell_toast(
     popen: PopenRecorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -109,6 +114,45 @@ def test_windows_powershell_toast(
     assert "it''s done" in script  # single quotes doubled for PS strings
     assert "body text" in script
     assert kwargs["stdout"] is subprocess.DEVNULL
+
+
+def test_windows_toast_uses_registered_powershell_aumid(
+    popen: PopenRecorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    notify_mod.notify("Title", "Body")
+    ((cmd, _kwargs),) = popen.calls
+    script = cmd[-1]
+    assert f"CreateToastNotifier('{_PS_AUMID}')" in script
+    assert "CreateToastNotifier('Flow')" not in script  # unregistered: never displays
+
+
+def test_windows_spawn_passes_create_no_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rec = PopenRecorder()
+    monkeypatch.setattr(notify_mod.subprocess, "Popen", rec)
+    monkeypatch.setattr(notify_mod.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+    monkeypatch.setattr(sys, "platform", "win32")
+    notify_mod.notify("Title", "Body")
+    ((_cmd, kwargs),) = rec.calls
+    assert kwargs["creationflags"] == 0x08000000  # no console-window flash
+
+
+def test_spawn_creationflags_degrade_to_zero_off_windows(
+    popen: PopenRecorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.delattr(notify_mod.subprocess, "CREATE_NO_WINDOW", raising=False)
+    notify_mod.notify("Title", "Body")
+    ((_cmd, kwargs),) = popen.calls
+    assert kwargs["creationflags"] == 0  # POSIX Popen only accepts 0
+
+
+def test_spawn_works_with_real_popen_on_posix() -> None:
+    if not sys.platform.startswith("linux"):
+        pytest.skip("POSIX-only sanity check")
+    notify_mod._spawn(["true"])  # must not raise: creationflags=0 is legal on POSIX
 
 
 def test_windows_falls_back_to_msg(monkeypatch: pytest.MonkeyPatch) -> None:

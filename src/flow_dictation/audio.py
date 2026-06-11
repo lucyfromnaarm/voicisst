@@ -22,6 +22,12 @@ _BEEP_SPECS: dict[str, tuple[int, int]] = {
 }
 _BEEP_SAMPLE_RATE = 22050
 
+# normalize() defaults, exported so callers (e.g. dictation's RMS gate) can
+# reason about how much rescue normalization provides without re-stating
+# magic numbers.
+NORMALIZE_TARGET_RMS = 0.05
+NORMALIZE_MAX_GAIN = 30.0
+
 
 def rms(audio: np.ndarray) -> float:
     """Root-mean-square level of a float audio buffer. Empty -> 0.0."""
@@ -32,7 +38,9 @@ def rms(audio: np.ndarray) -> float:
 
 
 def normalize(
-    audio: np.ndarray, target_rms: float = 0.05, max_gain: float = 30.0
+    audio: np.ndarray,
+    target_rms: float = NORMALIZE_TARGET_RMS,
+    max_gain: float = NORMALIZE_MAX_GAIN,
 ) -> np.ndarray:
     """Boost quiet (whispered) speech up to `target_rms`.
 
@@ -104,6 +112,25 @@ class Recorder:
 
     def start(self) -> None:
         with self._lock:
+            old = self.stream
+            if old is not None:
+                # Double start (e.g. a stop/start race upstream): never leak
+                # the live stream — its callback would keep appending into
+                # the new take. Stop and close it first.
+                print(
+                    "flow: Recorder.start() while already recording — "
+                    "stopping the previous stream first",
+                    file=sys.stderr,
+                )
+                self.stream = None
+                try:
+                    old.stop()
+                except Exception:
+                    pass
+                try:
+                    old.close()
+                except Exception:
+                    pass
             self.chunks = []
             self.start_ts = time.monotonic()
             kwargs: dict[str, object] = {
@@ -179,16 +206,28 @@ def _normalize_device(device: str | int | None) -> str | int | None:
 class SilenceDetector:
     """Trailing-silence auto-stop: feed float32 chunks, watch `.triggered`.
 
-    A chunk counts as silence when its rms is below `rms_gate`. The
-    detector arms only after it has heard speech at least once (so it never
-    fires while the user is still drawing breath), and any speech chunk
-    resets the trailing-silence counter. Once triggered it stays triggered.
+    A chunk counts as speech when its rms is at/above `speech_rms` (which
+    defaults to `rms_gate`); anything quieter is silence. The detector arms
+    only after it has heard speech at least once (so it never fires while
+    the user is still drawing breath), and any speech chunk resets the
+    trailing-silence counter. Once triggered it stays triggered.
+
+    `speech_rms` exists so whisper-quiet speakers still arm the detector:
+    when RMS normalization can rescue audio well below `rms_gate`, pass the
+    post-normalize potential (e.g. ``rms_gate / NORMALIZE_MAX_GAIN``) here.
     """
 
-    def __init__(self, silence_s: float, rms_gate: float, sample_rate: int):
+    def __init__(
+        self,
+        silence_s: float,
+        rms_gate: float,
+        sample_rate: int,
+        speech_rms: float | None = None,
+    ):
         self.silence_s = silence_s
         self.rms_gate = rms_gate
         self.sample_rate = sample_rate
+        self.speech_rms = rms_gate if speech_rms is None else speech_rms
         self.triggered = False
         self._heard_speech = False
         self._silent_samples = 0
@@ -196,7 +235,7 @@ class SilenceDetector:
     def feed(self, chunk: np.ndarray) -> None:
         if self.triggered or chunk.size == 0:
             return
-        if rms(chunk) >= self.rms_gate:
+        if rms(chunk) >= self.speech_rms:
             self._heard_speech = True
             self._silent_samples = 0
             return

@@ -46,6 +46,9 @@ class EvdevListener(HotkeyListener):
         self._holder_fd: int | None = None
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        # Did the last _find_devices() manage to open any /dev/input device?
+        # Distinguishes "no permission" from "no keyboard has the key".
+        self._saw_readable_device = False
         # Stable kernel constants; refreshed from evdev.ecodes in
         # _find_devices() so a (test-)injected evdev module wins.
         self._ev_key: int = 1  # ecodes.EV_KEY
@@ -107,12 +110,14 @@ class EvdevListener(HotkeyListener):
             )
 
         devices: list[Any] = []
+        self._saw_readable_device = False
         for path in evdev.list_devices():
             try:
                 dev = evdev.InputDevice(path)
             except (PermissionError, OSError) as e:
                 print(f"flow hotkeys: skip {path}: {e}", file=sys.stderr)
                 continue
+            self._saw_readable_device = True
             # Skip ydotool's own virtual keyboard. We use it to type and
             # backspace, so listening on it would feedback-loop our generated
             # Backspace events into the polish-cancel path.
@@ -138,9 +143,18 @@ class EvdevListener(HotkeyListener):
             return
         devices, wanted_codes = self._find_devices()
         if not devices:
+            if self._saw_readable_device:
+                # Permissions are fine — the user's keyboards just do not
+                # have any of the configured keys. The input-group hint
+                # would send them down the wrong path.
+                raise EngineError(
+                    f"input devices are readable, but none exposes any of {self.keys}",
+                    hint='set hotkey.keys to a key your keyboard has '
+                    '(e.g. "KEY_RIGHTALT", "KEY_F9"); '
+                    "find names with: python -m evdev.evtest",
+                )
             raise EngineError(
-                f"no input device exposes any of {self.keys} "
-                "(or none of /dev/input/event* is readable)",
+                f"none of /dev/input/event* is readable (cannot watch {self.keys})",
                 hint=INPUT_GROUP_HINT,
             )
         self._wanted_codes = wanted_codes

@@ -90,7 +90,11 @@ class DictationApp:
         self._ticker_stop = threading.Event()
 
         # Per-utterance streaming state (owned by the worker thread).
+        # _live_session additionally mirrors whichever stream session is
+        # currently being finalized, so _teardown can cancel it from another
+        # thread while the worker is blocked inside session.finalize().
         self._session: StreamSession | None = None
+        self._live_session: StreamSession | None = None
         self._typer: StreamingTyper | None = None
         self._pump_thread: threading.Thread | None = None
         self._pump_stop = threading.Event()
@@ -192,10 +196,31 @@ class DictationApp:
                 print(f"flow: listener stop failed: {e}", file=sys.stderr)
             self._listener = None
         self._request_stop(cancel=True)  # no-op unless a recording is live
+        # The worker may be blocked inside session.finalize() (the polish
+        # window). Cancel it the same way Backspace does, and cancel the
+        # session itself so a blocking network/model call returns early.
+        self._cancel_polish.set()
+        self._cancel_live_session()
         self._queue.put(EV_QUIT)
-        if self._worker is not None:
-            self._worker.join(timeout=5)
-            self._worker = None
+        worker, self._worker = self._worker, None
+        if worker is not None:
+            worker.join(timeout=5)
+            if worker.is_alive():
+                # The polish may have started blocking after the first
+                # cancel; cancel again and give it one more bounded join.
+                self._cancel_polish.set()
+                self._cancel_live_session()
+                worker.join(timeout=5)
+            if worker.is_alive():
+                # Residual risk: a session whose finalize() ignores cancel()
+                # can still hold the worker, and engine.close() below may
+                # then race the stuck polish. The bounded joins keep
+                # shutdown from hanging forever, which is the lesser evil.
+                print(
+                    "flow: worker did not exit after cancel — engine close "
+                    "may race a stuck polish",
+                    file=sys.stderr,
+                )
         self._ticker_stop.set()
         if self._ticker is not None:
             self._ticker.join(timeout=2)
@@ -236,18 +261,22 @@ class DictationApp:
             self._cancel_polish.set()
 
     def _request_start(self) -> None:
+        # The state flip and the enqueue must be atomic: if the put happened
+        # outside the lock, a watchdog stop racing a toggle start could
+        # enqueue EV_START before EV_STOP and the worker would double-start
+        # the recorder. queue.Queue is unbounded, so put() never blocks.
         with self._state_lock:
             if self._active:
                 return
             self._active = True
-        self._queue.put(EV_START)
+            self._queue.put(EV_START)
 
     def _request_stop(self, *, cancel: bool = False) -> None:
         with self._state_lock:
             if not self._active:
                 return
             self._active = False
-        self._queue.put(EV_CANCEL if cancel else EV_STOP)
+            self._queue.put(EV_CANCEL if cancel else EV_STOP)
 
     # -- watchdog ticker --------------------------------------------------------
 
@@ -314,8 +343,13 @@ class DictationApp:
             return
         if cfg.audio.auto_stop_silence_s > 0:
             self._silence_fed = 0
+            # speech_rms uses the effective gate so whisper-quiet speech
+            # (salvageable via normalize) still arms the auto-stop.
             self._silence = audio_mod.SilenceDetector(
-                cfg.audio.auto_stop_silence_s, cfg.audio.rms_gate, cfg.audio.sample_rate
+                cfg.audio.auto_stop_silence_s,
+                cfg.audio.rms_gate,
+                cfg.audio.sample_rate,
+                speech_rms=self._effective_rms_gate(),
             )
         self._beep("start")
         self._log(f"listening (vocab: {self._vocab[:60]})" if self._vocab else "listening")
@@ -376,26 +410,39 @@ class DictationApp:
             return
         self._beep("stop")
 
-        def reject(reason: tuple[str, str] | None = None) -> None:
-            # too-short / silent / muted — used exactly like the prototype.
+        def reject(reason: tuple[str, str]) -> None:
+            # too-short / silent / muted — like the prototype, but audible
+            # and explained: a cancel beep plus a notification so rejection
+            # never sounds like a successful stop followed by silence.
+            self._beep("cancel")
             if typer is not None:
                 typer.erase_all()
             self._close_session(session, cancel=True)
-            if reason is not None:
-                self._notify(reason[0], reason[1])
+            self._notify(reason[0], reason[1])
 
         if dur_ms < cfg.audio.min_record_ms:
-            reject()
+            reject(
+                (
+                    "too short",
+                    f"held {dur_ms / 1000:.1f}s, minimum "
+                    f"{cfg.audio.min_record_ms / 1000:.1f}s — [audio] min_record_ms",
+                )
+            )
             return
         if audio_arr.size == 0:
-            reject()
+            reject(("no audio captured", "the recorder returned no samples"))
             return
         level = audio_mod.rms(audio_arr)
         if level < cfg.audio.muted_rms:
             reject(("mic muted?", f"rms={level:.6f} — check pavucontrol / pipewire"))
             return
-        if level < cfg.audio.rms_gate:
-            reject()
+        if level < self._effective_rms_gate():
+            reject(
+                (
+                    "too quiet",
+                    f"rms={level:.4f} — lower [audio] rms_gate or move the mic closer",
+                )
+            )
             return
 
         t0 = time.monotonic()
@@ -436,6 +483,7 @@ class DictationApp:
             self._beep("error")
             return "", "", None
         if not raw:
+            self._beep("cancel")
             self._log("empty transcript — nothing to deliver")
             return "", "", None
         cleaned = raw
@@ -463,9 +511,11 @@ class DictationApp:
         raw = streamed.strip()
 
         self._cancel_polish.clear()
+        self._live_session = session  # teardown can cancel a blocked finalize
         self._polishing.set()
         cleaned = ""
         cancelled = False
+        failed = False
         gen = session.finalize(vocab=self._vocab)
         try:
             for snap in gen:
@@ -477,6 +527,7 @@ class DictationApp:
                 cleaned = str(snap)
                 typer.replace_with(cleaned)
         except EngineError as e:
+            failed = True
             self._notify(f"processing failed: {e}", e.hint or "", "critical")
             self._beep("error")
         finally:
@@ -485,13 +536,31 @@ class DictationApp:
             except Exception:
                 pass
             self._polishing.clear()
+            self._live_session = None
+
+        if self._cancel_polish.is_set():
+            # The cancel can land while finalize() is still blocked (e.g. a
+            # teardown cancelling the session aborts it before the first
+            # snapshot) — that is a cancel, not an empty transcript.
+            cancelled = True
 
         if cancelled:
             fallback = sanitize(raw or cleaned)
             typer.replace_with(fallback)
             self._notify("polish cancelled", "using raw transcript")
             final = fallback
+            self._close_session(session)
+        elif failed and (raw or cleaned.strip()):
+            # Finalize blew up, but the user's words are already on screen:
+            # never erase them — keep them exactly like a backspace cancel.
+            fallback = apply_replacements(sanitize(raw or cleaned), cfg.replacements)
+            typer.replace_with(fallback)
+            self._notify("polish failed", "raw transcript kept")
+            final = fallback
+            self._close_session(session, cancel=True)
         elif not cleaned.strip():
+            if not failed:  # a failure already beeped "error"
+                self._beep("cancel")
             typer.erase_all()
             self._close_session(session, cancel=True)
             self._log("empty transcript — nothing to deliver")
@@ -499,7 +568,7 @@ class DictationApp:
         else:
             final = apply_replacements(sanitize(cleaned), cfg.replacements)
             typer.replace_with(final)
-        self._close_session(session)
+            self._close_session(session)
         app_cls = windowinfo.focused_window_class()
         return (raw or cleaned), final, app_cls
 
@@ -627,6 +696,19 @@ class DictationApp:
     def _language(self) -> str | None:
         return self.cfg.whisper.language_or_none()
 
+    def _effective_rms_gate(self) -> float:
+        """The RMS floor an utterance must clear to be worth transcribing.
+
+        With normalization on, audio up to NORMALIZE_MAX_GAIN times quieter
+        than rms_gate is salvageable (normalize() boosts it back to the
+        target), so the gate is judged against that post-normalize
+        potential. muted_rms stays the hard floor for dead inputs.
+        """
+        gate = self.cfg.audio.rms_gate
+        if self.cfg.audio.normalize:
+            gate = gate / audio_mod.NORMALIZE_MAX_GAIN
+        return max(gate, self.cfg.audio.muted_rms)
+
     def _beep(self, kind: str) -> None:
         audio_mod.play_beep(kind, self.cfg.ui.beep)
 
@@ -646,6 +728,24 @@ class DictationApp:
                 session.cancel()
             except Exception:
                 pass
+        try:
+            session.close()
+        except Exception:
+            pass
+
+    def _cancel_live_session(self) -> None:
+        """Cancel the session being finalized (called from _teardown).
+
+        Cooperative sessions abort their blocking work on cancel(), which
+        unblocks the worker thread sitting inside finalize().
+        """
+        session = self._live_session
+        if session is None:
+            return
+        try:
+            session.cancel()
+        except Exception:
+            pass
         try:
             session.close()
         except Exception:
