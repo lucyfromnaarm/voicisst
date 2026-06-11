@@ -1,4 +1,4 @@
-# Contributing to Flow
+# Contributing to Voicisst
 
 Thanks for helping. Bug reports, new injector/listener backends, docs fixes,
 and accessibility feedback are all wanted.
@@ -6,8 +6,8 @@ and accessibility feedback are all wanted.
 ## Dev setup
 
 ```bash
-git clone https://github.com/lucyfromnaarm/flow-dictation
-cd flow-dictation
+git clone https://github.com/lucyfromnaarm/voicisst
+cd voicisst
 uv venv --python 3.12 .venv
 source .venv/bin/activate                  # plain python -m venv works too
 uv pip install -e ".[all,dev]"             # or: pip install -e ".[all,dev]"
@@ -64,7 +64,7 @@ These are enforced (CI and review), not aspirational:
 Injectors put text into the focused window. To support a new mechanism (a
 new compositor protocol, a new OS):
 
-1. Create `src/flow_dictation/inject/yourbackend.py` with a class
+1. Create `src/voicisst/inject/yourbackend.py` with a class
    subclassing `Injector` from `inject/base.py`. Implement `name`, the
    `available()` classmethod (cheap, no side effects — checked at startup),
    and `type_text`, `backspace`, `paste_chord`, `tap_escape`.
@@ -92,7 +92,7 @@ autorepeat, and document your backend's key-name format in
   config changes.
 - New config fields need a default that keeps existing setups working.
 - For anything user-visible, say in the PR what you ran by hand to verify it
-  (which OS, which compositor) — much of Flow can only be exercised on real
+  (which OS, which compositor) — much of Voicisst can only be exercised on real
   hardware.
 
 ## Code of conduct

@@ -7,10 +7,10 @@ from collections.abc import Iterator
 
 import pytest
 
-from flow_dictation.config import OutputConfig
-from flow_dictation.engine.base import StreamSession
-from flow_dictation.inject.base import Injector
-from flow_dictation.streaming import StreamingTyper
+from voicisst.config import OutputConfig
+from voicisst.engine.base import StreamSession
+from voicisst.inject.base import Injector
+from voicisst.streaming import StreamingTyper
 
 
 class FakeInjector(Injector):

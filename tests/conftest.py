@@ -12,7 +12,7 @@ _TESTS_DIR = str(Path(__file__).resolve().parent)
 if _TESTS_DIR not in sys.path:
     sys.path.insert(0, _TESTS_DIR)
 
-from flow_dictation.config import Config, load_config  # noqa: E402
+from voicisst.config import Config, load_config  # noqa: E402
 
 
 @pytest.fixture

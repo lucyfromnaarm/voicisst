@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Flow is built by and for people who need their computers to meet them where
+Voicisst is built by and for people who need their computers to meet them where
 they are — including people with chronic illness, limited energy, and limited
 mobility. The community around it should work the same way.
 

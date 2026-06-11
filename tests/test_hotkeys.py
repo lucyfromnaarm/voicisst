@@ -10,11 +10,11 @@ from typing import Any
 
 import pytest
 
-from flow_dictation.config import Config
-from flow_dictation.engine.base import EngineError
-from flow_dictation.hotkeys import get_listener
-from flow_dictation.hotkeys.evdev_listener import EvdevListener
-from flow_dictation.hotkeys.pynput_listener import PynputListener, resolve_key_name
+from voicisst.config import Config
+from voicisst.engine.base import EngineError
+from voicisst.hotkeys import get_listener
+from voicisst.hotkeys.evdev_listener import EvdevListener
+from voicisst.hotkeys.pynput_listener import PynputListener, resolve_key_name
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -602,7 +602,7 @@ def test_pynput_other_keys_ignored_and_stop_idempotent(fake_pynput):
 
 
 def test_pynput_injected_events_ignored(fake_pynput):
-    """pynput >= 1.8 calls callbacks as (key, injected). Flow's own synthetic
+    """pynput >= 1.8 calls callbacks as (key, injected). Voicisst's own synthetic
     keystrokes — e.g. its backspaces during streaming polish — arrive with
     injected=True and must not fire callbacks, or the injected backspaces
     would self-cancel the polish."""
@@ -721,7 +721,7 @@ def test_pynput_win32_right_alt_arriving_as_alt_gr_fires_hotkey(fake_pynput, mon
 
 
 def patch_notify(monkeypatch) -> list[tuple]:
-    import flow_dictation.notify as notify_mod
+    import voicisst.notify as notify_mod
 
     notifications: list[tuple] = []
     monkeypatch.setattr(
@@ -749,9 +749,9 @@ def test_pynput_darwin_untrusted_warns_and_notifies_critical(
     assert "System Settings" in err and "Privacy & Security" in err
     assert notifications == [
         (
-            "flow hotkeys: macOS denied Input Monitoring",
+            "voicisst hotkeys: macOS denied Input Monitoring",
             "grant your terminal/app permission in System Settings -> "
-            "Privacy & Security -> Input Monitoring, then restart flow",
+            "Privacy & Security -> Input Monitoring, then restart voicisst",
             "critical",
         )
     ]
@@ -810,7 +810,7 @@ def test_pynput_darwin_untrusted_notify_failure_does_not_break_start(
     Listener = fake_pynput.keyboard.Listener
     monkeypatch.setattr(Listener, "IS_TRUSTED", False, raising=False)
     monkeypatch.setattr(Listener, "_ready", True, raising=False)
-    import flow_dictation.notify as notify_mod
+    import voicisst.notify as notify_mod
 
     def boom(*a, **k):
         raise RuntimeError("no notifier")

@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Flow installer for Linux and macOS.
+# Voicisst installer for Linux and macOS.
 #
-# Installs flow-dictation[local,server,tray] as an isolated CLI tool using
+# Installs voicisst[local,server,tray] as an isolated CLI tool using
 # uv (preferred) or pipx (installed via pip --user as a fallback). Tries
 # PyPI first; if the package is not published there yet, installs straight
 # from the git repository.
 #
 # Usage:
 #   ./scripts/install.sh
-#   curl -fsSL https://github.com/lucyfromnaarm/flow-dictation/raw/main/scripts/install.sh | bash
+#   curl -fsSL https://github.com/lucyfromnaarm/voicisst/raw/main/scripts/install.sh | bash
 set -euo pipefail
 
-REPO_URL="https://github.com/lucyfromnaarm/flow-dictation"
+REPO_URL="https://github.com/lucyfromnaarm/voicisst"
 EXTRAS="local,server,tray"
-PYPI_SPEC="flow-dictation[${EXTRAS}]"
-GIT_SPEC="flow-dictation[${EXTRAS}] @ git+${REPO_URL}"
+PYPI_SPEC="voicisst[${EXTRAS}]"
+GIT_SPEC="voicisst[${EXTRAS}] @ git+${REPO_URL}"
 
 log()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
@@ -62,11 +62,11 @@ fi
 # --- next steps ---------------------------------------------------------------
 cat <<'EOF'
 
-Flow is installed. Next steps:
-  1. New terminal (or `hash -r`) so `flow` is on PATH (usually ~/.local/bin).
-  2. flow config init     # write a documented config file
-  3. flow selftest        # check mic, hotkeys, whisper, polish, injection
-  4. flow run             # hold the hotkey, speak, release
+Voicisst is installed. Next steps:
+  1. New terminal (or `hash -r`) so `voicisst` is on PATH (usually ~/.local/bin).
+  2. voicisst config init     # write a documented config file
+  3. voicisst selftest        # check mic, hotkeys, whisper, polish, injection
+  4. voicisst run             # hold the hotkey, speak, release
 
 For LLM polish, install Ollama (https://ollama.com) and pull a model, or
 point [polish] at any OpenAI-compatible server in the config.

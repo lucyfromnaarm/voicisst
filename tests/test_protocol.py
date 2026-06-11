@@ -8,7 +8,7 @@ import wave
 import numpy as np
 import pytest
 
-from flow_dictation import protocol
+from voicisst import protocol
 
 
 def test_constants() -> None:

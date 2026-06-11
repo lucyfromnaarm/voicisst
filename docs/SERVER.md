@@ -1,8 +1,8 @@
-# Running a Flow server
+# Running a Voicisst server
 
-`flow serve` exposes Flow's transcription and polish over HTTP + WebSocket,
+`voicisst serve` exposes Voicisst's transcription and polish over HTTP + WebSocket,
 so one machine with a GPU can do the heavy lifting for every other machine
-you own. The client (`flow run --server URL`) keeps audio capture, hotkeys,
+you own. The client (`voicisst run --server URL`) keeps audio capture, hotkeys,
 and typing local — only audio and text cross the wire.
 
 ## Setup
@@ -10,16 +10,16 @@ and typing local — only audio and text cross the wire.
 On the GPU box:
 
 ```bash
-pipx install "flow-dictation[server]"
+pipx install "voicisst[server]"
 ollama pull qwen3.5:4b            # if you want polish on the server
-flow serve                        # binds 127.0.0.1:8765 by default
+voicisst serve                        # binds 127.0.0.1:8765 by default
 ```
 
 On the laptop:
 
 ```bash
-pipx install flow-dictation       # no extras needed; inference is remote
-flow run --server http://big-box:8765 --token s3cret
+pipx install voicisst       # no extras needed; inference is remote
+voicisst run --server http://big-box:8765 --token s3cret
 ```
 
 or persist it in the client's `config.toml`:
@@ -35,7 +35,7 @@ The server warms its models at startup, so the first dictation isn't slow.
 
 ## Security model
 
-- **Default is loopback.** `flow serve` binds `127.0.0.1` and is unreachable
+- **Default is loopback.** `voicisst serve` binds `127.0.0.1` and is unreachable
   from other machines until you change `server.host`.
 - **Token auth.** Set a token on both ends and every REST request must send
   `Authorization: Bearer <token>`; the WebSocket passes it as a `?token=`
@@ -43,34 +43,34 @@ The server warms its models at startup, so the first dictation isn't slow.
   → HTTP 401 (the WebSocket gets an `error` frame and close code 4401).
   Generate one with
   `python -c "import secrets; print(secrets.token_hex(32))"`.
-- **LAN exposure.** `flow serve --host 0.0.0.0` opens the API to your
+- **LAN exposure.** `voicisst serve --host 0.0.0.0` opens the API to your
   network. Anyone who can reach the port can run transcription jobs on your
   GPU and read what you dictate, so always pair it with a token — the server
   warns loudly at startup if you bind a non-loopback address without one.
 - **No TLS built in.** Traffic is plain HTTP. On a trusted home LAN (or over
   WireGuard/Tailscale) that may be fine. Across anything you trust less, put
-  a reverse proxy with TLS in front and keep Flow itself on loopback:
+  a reverse proxy with TLS in front and keep Voicisst itself on loopback:
 
   ```
   # Caddyfile — Caddy handles certificates and WebSocket upgrades
-  flow.example.com {
+  voicisst.example.com {
       reverse_proxy 127.0.0.1:8765
   }
   ```
 
   (nginx works too; remember the `Upgrade`/`Connection` headers for
-  `/v1/stream`.) Then point the client at `https://flow.example.com`.
+  `/v1/stream`.) Then point the client at `https://voicisst.example.com`.
 
 ## systemd unit (headless GPU box)
 
 ```ini
-# ~/.config/systemd/user/flow-serve.service
+# ~/.config/systemd/user/voicisst-serve.service
 [Unit]
-Description=Flow dictation server
+Description=Voicisst dictation server
 After=network-online.target
 
 [Service]
-ExecStart=%h/.local/bin/flow serve --host 0.0.0.0 --port 8765 --token CHANGE-ME
+ExecStart=%h/.local/bin/voicisst serve --host 0.0.0.0 --port 8765 --token CHANGE-ME
 Restart=on-failure
 RestartSec=3
 
@@ -80,9 +80,9 @@ WantedBy=default.target
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now flow-serve
+systemctl --user enable --now voicisst-serve
 loginctl enable-linger $USER     # keep it running with no one logged in
-journalctl --user -u flow-serve -f
+journalctl --user -u voicisst-serve -f
 ```
 
 ## Protocol reference
@@ -178,7 +178,7 @@ curl -s -X POST $BASE/v1/process \
 From the client machine:
 
 ```bash
-flow selftest --server http://big-box:8765
+voicisst selftest --server http://big-box:8765
 ```
 
 This checks reachability, auth, and the server's engine health alongside the

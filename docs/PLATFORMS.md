@@ -1,15 +1,15 @@
 # Platform setup
 
-What Flow needs from each OS, and how to give it that with the least
-friction. After any setup change, `flow selftest` tells you whether it
+What Voicisst needs from each OS, and how to give it that with the least
+friction. After any setup change, `voicisst selftest` tells you whether it
 worked.
 
 ## Linux
 
-Flow supports both Wayland and X11. Two things need system-level setup:
+Voicisst supports both Wayland and X11. Two things need system-level setup:
 
 - **Hotkeys** are read from `/dev/input/event*` via evdev, which requires
-  membership in the `input` group. (If that's not available, Flow falls back
+  membership in the `input` group. (If that's not available, Voicisst falls back
   to pynput, which works on X11 but not on most Wayland compositors.)
 - **Typing/pasting** on Wayland goes through `ydotool`, whose daemon
   `ydotoold` creates a virtual keyboard via `/dev/uinput`.
@@ -38,22 +38,22 @@ group membership only applies to new sessions.
 Then:
 
 ```bash
-flow selftest
-flow run                                      # run in the foreground first
+voicisst selftest
+voicisst run                                      # run in the foreground first
 ```
 
-To start Flow at login, install the user unit from `packaging/systemd/`
+To start Voicisst at login, install the user unit from `packaging/systemd/`
 (the script prints these exact commands when it finishes):
 
 ```bash
-install -Dm0644 packaging/systemd/flow.service ~/.config/systemd/user/flow.service
+install -Dm0644 packaging/systemd/voicisst.service ~/.config/systemd/user/voicisst.service
 systemctl --user daemon-reload
-systemctl --user enable --now flow.service
-journalctl --user -u flow -f                  # watch the logs
+systemctl --user enable --now voicisst.service
+journalctl --user -u voicisst -f                  # watch the logs
 ```
 
-The unit expects `flow` at `~/.local/bin/flow` (the pipx/uv default) — edit
-`ExecStart` if `command -v flow` says yours lives elsewhere.
+The unit expects `voicisst` at `~/.local/bin/voicisst` (the pipx/uv default) — edit
+`ExecStart` if `command -v voicisst` says yours lives elsewhere.
 
 ### Wayland notes
 
@@ -62,10 +62,10 @@ The unit expects `flow` at `~/.local/bin/flow` (the pipx/uv default) — edit
 - The ydotoold socket lives at `$XDG_RUNTIME_DIR/.ydotool_socket`; the
   `YDOTOOL_SOCKET` environment variable overrides the location. If a
   system-wide `ydotoold` service is running, disable it — its socket is
-  root-owned and Flow can't reach it.
-- **GNOME focused-window caveat:** Flow checks the focused window's class
+  root-owned and Voicisst can't reach it.
+- **GNOME focused-window caveat:** Voicisst checks the focused window's class
   only to detect terminals (where it copies text instead of pasting). GNOME
-  Wayland has no public API for this; Flow tries a GNOME Shell extension
+  Wayland has no public API for this; Voicisst tries a GNOME Shell extension
   D-Bus call (a "Window Calls"-style extension) and gives up quietly if none
   is installed. Without it, terminal detection doesn't work on GNOME — if
   you dictate into terminals a lot, either install such an extension or set
@@ -93,64 +93,64 @@ section.
 ## macOS
 
 ```bash
-pipx install "flow-dictation[local]"
-flow selftest
-flow
+pipx install "voicisst[local]"
+voicisst selftest
+voicisst
 ```
 
 Default hotkey: **right Option** (`alt_r`), hold to talk. Pasting uses Cmd+V.
 
-macOS gates everything Flow does behind permission prompts. All three live
+macOS gates everything Voicisst does behind permission prompts. All three live
 in **System Settings → Privacy & Security**:
 
-1. **Microphone** — prompted automatically the first time Flow records. If
+1. **Microphone** — prompted automatically the first time Voicisst records. If
    you missed the prompt: System Settings → Privacy & Security → Microphone,
-   enable your terminal app (or the Flow binary, if you use the release
+   enable your terminal app (or the Voicisst binary, if you use the release
    build).
-2. **Accessibility** — required for Flow to type into other apps. System
+2. **Accessibility** — required for Voicisst to type into other apps. System
    Settings → Privacy & Security → Accessibility → "+" → add the app that
-   launches Flow (Terminal.app, iTerm2, or the Flow binary). Without this,
+   launches Voicisst (Terminal.app, iTerm2, or the Voicisst binary). Without this,
    dictation transcribes but nothing appears in the focused window.
 3. **Input Monitoring** — required for the global hotkey listener. System
    Settings → Privacy & Security → Input Monitoring → add the same app.
    Without this, the hotkey never fires.
 
 Note that the permission attaches to the *launching* app: if you grant
-Terminal.app and later run Flow from iTerm2, you'll grant it again. After
-changing a permission, restart Flow.
+Terminal.app and later run Voicisst from iTerm2, you'll grant it again. After
+changing a permission, restart Voicisst.
 
-To start Flow at login, use the LaunchAgent template at
-`packaging/macos/com.flowdictation.flow.plist` (it runs
-`~/.local/bin/flow run` and logs to `~/Library/Logs/flow.log`):
+To start Voicisst at login, use the LaunchAgent template at
+`packaging/macos/one.octavia.voicisst.plist` (it runs
+`~/.local/bin/voicisst run` and logs to `~/Library/Logs/voicisst.log`):
 
 ```bash
-cp packaging/macos/com.flowdictation.flow.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.flowdictation.flow.plist
-# older macOS: launchctl load -w ~/Library/LaunchAgents/com.flowdictation.flow.plist
+cp packaging/macos/one.octavia.voicisst.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/one.octavia.voicisst.plist
+# older macOS: launchctl load -w ~/Library/LaunchAgents/one.octavia.voicisst.plist
 ```
 
 ## Windows
 
 ```powershell
-irm https://raw.githubusercontent.com/lucyfromnaarm/flow-dictation/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/lucyfromnaarm/voicisst/main/scripts/install.ps1 | iex
 ```
 
-or `pipx install "flow-dictation[local]"`, or unzip the release binary.
+or `pipx install "voicisst[local]"`, or unzip the release binary.
 
 Default hotkey: **right Ctrl** (`ctrl_r`), hold to talk. Hotkeys and typing
 both use pynput; pasting is Ctrl+V.
 
-**Antivirus note:** Flow listens for a global hotkey, which means installing
+**Antivirus note:** Voicisst listens for a global hotkey, which means installing
 a system-wide keyboard hook — the same mechanism keyloggers use, so some
-antivirus products flag it. Flow only acts on your configured hotkey (plus
+antivirus products flag it. Voicisst only acts on your configured hotkey (plus
 Backspace, to let you cancel a polish in progress) and never sends keystrokes
 anywhere; the listener is ~200 lines you can read at
-`src/flow_dictation/hotkeys/pynput_listener.py`. If your AV blocks it, add an
-exclusion for the Flow executable.
+`src/voicisst/hotkeys/pynput_listener.py`. If your AV blocks it, add an
+exclusion for the Voicisst executable.
 
 **Start at login:** press Win+R, run `shell:startup`, and create a shortcut
-there pointing at `flow.exe` (pipx installs it under
-`%USERPROFILE%\.local\bin`; `where flow` shows the path). Set the shortcut to
+there pointing at `voicisst.exe` (pipx installs it under
+`%USERPROFILE%\.local\bin`; `where voicisst` shows the path). Set the shortcut to
 run minimized if you don't want a console window.
 
 ## Hardware notes (all platforms)

@@ -1,26 +1,26 @@
 # Configuration
 
-Flow reads a TOML file, environment variables, and CLI flags, in this order
+Voicisst reads a TOML file, environment variables, and CLI flags, in this order
 (later wins):
 
 1. Built-in defaults
 2. `config.toml`
 3. Legacy environment variables (`WHISPER_MODEL`, `OLLAMA_MODEL`, ... — kept
    from the original prototype)
-4. `FLOW_*` environment variables
+4. `VOICISST_*` environment variables
 5. CLI flags (`--server`, `--toggle`, `--language`, ...)
 
 Useful commands:
 
 ```bash
-flow config path   # where the config file lives on this machine
-flow config init   # write a fully documented template there
-flow config show   # print the effective config after all overrides
+voicisst config path   # where the config file lives on this machine
+voicisst config init   # write a fully documented template there
+voicisst config show   # print the effective config after all overrides
 ```
 
-Typical locations: `~/.config/flow-dictation/config.toml` on Linux,
-`~/Library/Application Support/flow-dictation/config.toml` on macOS, under
-`%LOCALAPPDATA%` on Windows. `flow config path` is authoritative.
+Typical locations: `~/.config/voicisst/config.toml` on Linux,
+`~/Library/Application Support/voicisst/config.toml` on macOS, under
+`%LOCALAPPDATA%` on Windows. `voicisst config path` is authoritative.
 
 Every setting is optional. The values below are the defaults.
 
@@ -28,8 +28,8 @@ Every setting is optional. The values below are the defaults.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `mode` | `"local"` | `"local"` runs Whisper and the polisher on this machine. `"remote"` sends audio to a `flow serve` instance. |
-| `server_url` | `""` | Server base URL for remote mode, e.g. `"http://big-box:8765"`. `flow run --server URL` sets both this and `mode = "remote"`. |
+| `mode` | `"local"` | `"local"` runs Whisper and the polisher on this machine. `"remote"` sends audio to a `voicisst serve` instance. |
+| `server_url` | `""` | Server base URL for remote mode, e.g. `"http://big-box:8765"`. `voicisst run --server URL` sets both this and `mode = "remote"`. |
 | `token` | `""` | Bearer token for the remote server. Must match the server's `server.token`. |
 | `request_timeout` | `120.0` | Timeout in seconds for HTTP requests to the server. |
 
@@ -48,7 +48,7 @@ Every setting is optional. The values below are the defaults.
 
 The polish step sends the raw transcript to an LLM that removes fillers,
 applies self-corrections, formats lists, and punctuates. If polish fails for
-any reason, Flow delivers the raw transcript instead and tells you why.
+any reason, Voicisst delivers the raw transcript instead and tells you why.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -72,11 +72,11 @@ Ollama models differ in how thinking is switched off, so the Ollama backend
 negotiates it on the first request:
 
 - Ollama-native thinking models (qwen3.5, deepseek-r1, ...) honor the
-  `think` API field. Flow always sends it — without `think: false` these
+  `think` API field. Voicisst always sends it — without `think: false` these
   models burn the whole `num_predict` budget on a separate thinking channel
   and return an *empty* response.
 - Models pulled straight from Hugging Face as GGUFs have no thinking
-  template and reject the `think` field with a 400. Flow detects that once,
+  template and reject the `think` field with a 400. Voicisst detects that once,
   then falls back to appending a `/no_think` marker to the prompt instead.
 
 Either way, any `<think>...</think>` blocks that leak into the output are
@@ -103,7 +103,7 @@ Which names are valid depends on the backend that ends up listening:
   `"a"`.
 
 The pynput backend also understands the evdev-style `KEY_*` names, so a
-config written on Linux keeps working if Flow falls back to pynput. Unknown
+config written on Linux keeps working if Voicisst falls back to pynput. Unknown
 names produce a warning rather than an error.
 
 ## [audio]
@@ -130,16 +130,16 @@ names produce a warning rather than an error.
 | `key_hold_ms` | `0` | Key hold time (ydotool `--key-hold`); `0` = backend default. |
 | `paste_chord` | `"auto"` | Paste shortcut: `"auto"` (Ctrl+V, or Cmd+V on macOS) \| `"ctrl-v"` \| `"ctrl-shift-v"` \| `"cmd-v"`. |
 | `newline_mode` | `"shift-enter"` | How `\n` is typed: `"shift-enter"` keeps chat apps (Slack, Discord, Claude) from treating each newline as "send". `"enter"` sends plain Enter. |
-| `terminal_classes` | `["kitty", "alacritty", "foot", "wezterm", "konsole", "org.gnome.Terminal", "xterm", "ptyxis", "terminal", "iterm2", "windowsterminal", "cmd.exe", "powershell"]` | Window classes treated as terminals. In a terminal, Flow copies the text to the clipboard and notifies you to press Ctrl+Shift+V instead of injecting a paste. |
+| `terminal_classes` | `["kitty", "alacritty", "foot", "wezterm", "konsole", "org.gnome.Terminal", "xterm", "ptyxis", "terminal", "iterm2", "windowsterminal", "cmd.exe", "powershell"]` | Window classes treated as terminals. In a terminal, Voicisst copies the text to the clipboard and notifies you to press Ctrl+Shift+V instead of injecting a paste. |
 
 ## [dictionary]
 
-Names and jargon Flow should spell correctly. Dictionary words are fed to
+Names and jargon Voicisst should spell correctly. Dictionary words are fed to
 Whisper as the `initial_prompt` and to the polisher as preferred spellings.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `path` | `""` | Path to a dictionary file; `""` = `dictionary.txt` in the Flow data directory. |
+| `path` | `""` | Path to a dictionary file; `""` = `dictionary.txt` in the Voicisst data directory. |
 | `words` | `[]` | Inline list of terms, merged with the file. |
 | `use_selection` | `true` | Linux: text highlighted at the moment you press the hotkey (the primary selection) is added as spelling context for that one dictation. |
 
@@ -152,7 +152,7 @@ One term per line; `#` starts a comment:
 Anja Šimunović
 Toivo
 # projects
-flow-dictation
+voicisst
 ctranslate2
 ```
 
@@ -174,7 +174,7 @@ there is no environment-variable form.
 
 ## [server]
 
-Settings for `flow serve`. See [SERVER.md](SERVER.md).
+Settings for `voicisst serve`. See [SERVER.md](SERVER.md).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -188,26 +188,26 @@ Settings for `flow serve`. See [SERVER.md](SERVER.md).
 |---|---|---|
 | `beep` | `true` | Short tones on start/stop/cancel/error. |
 | `notify` | `true` | Desktop notifications (always also logged to stderr). |
-| `tray` | `false` | Tray icon; needs the extra: `pip install "flow-dictation[tray]"`. |
+| `tray` | `false` | Tray icon; needs the extra: `pip install "voicisst[tray]"`. |
 
 ## [history]
 
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `false` | Log every dictation locally. |
-| `path` | `""` | JSONL file; `""` = `history.jsonl` in the Flow data directory. Each line: `{"ts", "raw", "text", "app"}`. |
+| `path` | `""` | JSONL file; `""` = `history.jsonl` in the Voicisst data directory. Each line: `{"ts", "raw", "text", "app"}`. |
 
 ## Environment variables
 
-Any setting can be overridden with `FLOW_<SECTION>_<KEY>`:
+Any setting can be overridden with `VOICISST_<SECTION>_<KEY>`:
 
 ```bash
-FLOW_WHISPER_MODEL=small
-FLOW_POLISH_ENABLED=0
-FLOW_HOTKEY_KEYS="KEY_F9,KEY_MENU"          # lists are comma-separated
-FLOW_AUDIO_AUTO_STOP_SILENCE_S=2.0
-FLOW_ENGINE_SERVER_URL=http://big-box:8765
-FLOW_OUTPUT_PASTE_CHORD=ctrl-shift-v
+VOICISST_WHISPER_MODEL=small
+VOICISST_POLISH_ENABLED=0
+VOICISST_HOTKEY_KEYS="KEY_F9,KEY_MENU"          # lists are comma-separated
+VOICISST_AUDIO_AUTO_STOP_SILENCE_S=2.0
+VOICISST_ENGINE_SERVER_URL=http://big-box:8765
+VOICISST_OUTPUT_PASTE_CHORD=ctrl-shift-v
 ```
 
 Booleans: `0`, `false`, `no`, `off`, and the empty string mean false
@@ -215,7 +215,7 @@ Booleans: `0`, `false`, `no`, `off`, and the empty string mean false
 
 ### Legacy variables
 
-These pre-date the config file and still work (the `FLOW_*` form wins when
+These pre-date the config file and still work (the `VOICISST_*` form wins when
 both are set):
 
 | Legacy variable | Maps to |
@@ -249,7 +249,7 @@ both are set):
 | `TERMINAL_CLASSES` | `output.terminal_classes` |
 | `BEEP` | `ui.beep` |
 
-`WHISPER_BACKEND` from the prototype is recognized but ignored — Flow uses
+`WHISPER_BACKEND` from the prototype is recognized but ignored — Voicisst uses
 faster-whisper only.
 
 ## CLI overrides
@@ -257,11 +257,11 @@ faster-whisper only.
 CLI flags have the last word:
 
 ```bash
-flow run --server http://big-box:8765 --token s3cret   # engine.mode=remote + url + token
-flow run --toggle                                       # hotkey.mode=toggle
-flow run --stream / --no-stream                         # output.stream
-flow run --language de                                  # whisper.language
-flow run --config /path/to/other.toml                   # alternate config file
-flow run --tray                                         # ui.tray=true
-flow serve --host 0.0.0.0 --port 8765 --token s3cret    # server.*
+voicisst run --server http://big-box:8765 --token s3cret   # engine.mode=remote + url + token
+voicisst run --toggle                                       # hotkey.mode=toggle
+voicisst run --stream / --no-stream                         # output.stream
+voicisst run --language de                                  # whisper.language
+voicisst run --config /path/to/other.toml                   # alternate config file
+voicisst run --tray                                         # ui.tray=true
+voicisst serve --host 0.0.0.0 --port 8765 --token s3cret    # server.*
 ```

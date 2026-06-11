@@ -1,4 +1,4 @@
-"""Tests for flow_dictation.clipboard — all subprocess/which mocked."""
+"""Tests for voicisst.clipboard — all subprocess/which mocked."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_dictation import clipboard
+from voicisst import clipboard
 
 
 class RunRecorder:
@@ -187,7 +187,7 @@ def test_copy_windows_ctypes_declares_signatures_before_calling(monkeypatch):
 
 
 def test_copy_windows_ctypes_64bit_handle_round_trip(monkeypatch):
-    """Full-width handles flow GlobalAlloc -> GlobalLock/memmove ->
+    """Full-width handles voicisst GlobalAlloc -> GlobalLock/memmove ->
     SetClipboardData untruncated, and the payload is UTF-16LE + NUL."""
     monkeypatch.setattr(sys, "platform", "win32")
     fake = make_fake_ctypes()
@@ -231,7 +231,7 @@ def test_copy_windows_powershell_fallback_uses_encoded_command_and_env(monkeypat
     # PowerShell fallback runs.
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(clipboard.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
-    monkeypatch.setenv("FLOW_TEST_SENTINEL", "kept")
+    monkeypatch.setenv("VOICISST_TEST_SENTINEL", "kept")
     rec = RunRecorder()
     monkeypatch.setattr(clipboard.shutil, "which", which_factory("powershell"))
     monkeypatch.setattr(clipboard.subprocess, "run", rec)
@@ -243,10 +243,10 @@ def test_copy_windows_powershell_fallback_uses_encoded_command_and_env(monkeypat
     assert "-Command" not in args  # no plain-text script, no quoting pitfalls
     encoded = args[args.index("-EncodedCommand") + 1]
     script = base64.b64decode(encoded).decode("utf-16-le")
-    assert script == "Set-Clipboard -Value $env:FLOW_CLIP"
+    assert script == "Set-Clipboard -Value $env:VOICISST_CLIP"
     # The text travels via the environment, never through console decoding.
-    assert kwargs["env"]["FLOW_CLIP"] == text
-    assert kwargs["env"]["FLOW_TEST_SENTINEL"] == "kept"  # parent env inherited
+    assert kwargs["env"]["VOICISST_CLIP"] == text
+    assert kwargs["env"]["VOICISST_TEST_SENTINEL"] == "kept"  # parent env inherited
     assert "input" not in kwargs  # nothing piped to stdin at all
     assert kwargs["creationflags"] == 0x08000000  # CREATE_NO_WINDOW: no console flash
 

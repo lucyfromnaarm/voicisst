@@ -1,4 +1,4 @@
-"""Headless tests for flow_dictation.audio (no real audio hardware)."""
+"""Headless tests for voicisst.audio (no real audio hardware)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import types
 import numpy as np
 import pytest
 
-from flow_dictation import audio
+from voicisst import audio
 
 # ---------------------------------------------------------------------------
 # Fake sounddevice

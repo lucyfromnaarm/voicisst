@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Flow are documented here. The format follows
+All notable changes to Voicisst are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.0] - 2026-06-11
 
-First release. Flow grew out of a single-file Linux prototype; 0.1.0 is the
+First release. Voicisst grew out of a single-file Linux prototype; 0.1.0 is the
 cross-platform rewrite.
 
 ### Added
@@ -32,9 +32,9 @@ cross-platform rewrite.
 - Streaming mode: live-types the raw transcript while you speak, shows a
   processing indicator, then replaces it in place with the polished text;
   Backspace during polish cancels and keeps the raw transcript.
-- Client/server split: `flow serve` exposes REST + WebSocket endpoints
+- Client/server split: `voicisst serve` exposes REST + WebSocket endpoints
   (`/v1/health`, `/v1/transcribe`, `/v1/polish`, `/v1/process`,
-  `/v1/stream`) with bearer-token auth; `flow run --server URL` keeps
+  `/v1/stream`) with bearer-token auth; `voicisst run --server URL` keeps
   capture and typing local.
 - Audio pipeline: RMS normalization for quiet/whispered speech, muted-mic
   detection, silence gate, min/max recording bounds, optional silence
@@ -42,10 +42,10 @@ cross-platform rewrite.
 - Personal dictionary (config list + `dictionary.txt`) and, on Linux,
   primary-selection context for correct spelling of names and jargon.
 - Post-polish find/replace rules (case-insensitive, whole-word).
-- Configuration via TOML + `FLOW_*` environment variables + CLI flags, with
-  the prototype's legacy env vars still honored; `flow config
+- Configuration via TOML + `VOICISST_*` environment variables + CLI flags, with
+  the prototype's legacy env vars still honored; `voicisst config
   init/show/path`.
-- `flow selftest` environment diagnostics (config, hotkeys, audio capture,
+- `voicisst selftest` environment diagnostics (config, hotkeys, audio capture,
   engine health, injection, clipboard, polish round-trip).
 - Optional dictation history (local JSONL) and optional tray icon.
 - Packaging: PyPI extras (`local`, `server`, `tray`, `all`), PyInstaller
@@ -53,5 +53,5 @@ cross-platform rewrite.
   (udev/uinput/input group/ydotoold), systemd units, macOS LaunchAgent
   template.
 
-[Unreleased]: https://github.com/lucyfromnaarm/flow-dictation/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/lucyfromnaarm/flow-dictation/releases/tag/v0.1.0
+[Unreleased]: https://github.com/lucyfromnaarm/voicisst/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/lucyfromnaarm/voicisst/releases/tag/v0.1.0
