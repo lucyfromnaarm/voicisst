@@ -1,0 +1,13 @@
+.idea/
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+*.spec.bak
+.coverage
+node_modules/
