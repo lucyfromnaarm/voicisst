@@ -2,5 +2,5 @@ evdev>=1.7,<2
 sounddevice>=0.4,<1
 numpy>=1.24,<3
 requests>=2.31,<3
-openai-whisper>=20231117
+openai-whisper>=20250625
 faster-whisper>=1.0,<2
