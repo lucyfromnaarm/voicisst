@@ -779,6 +779,57 @@ def create_ui_app(
             return _error_503(e)
         return {"result": result, "changed": result != text}
 
+    @app.get("/api/polish/models")
+    async def polish_models(request: Request) -> Any:
+        """List the models installed on the polish backend, for the model
+        dropdown. `backend`/`url` query params let the settings form ask
+        about values it has not saved yet."""
+        backend = (
+            request.query_params.get("backend") or cfg.polish.backend or ""
+        ).strip().lower()
+        url = (request.query_params.get("url") or cfg.polish.url or "").strip().rstrip("/")
+        if not url.startswith(("http://", "https://")):
+            return JSONResponse(
+                {"error": f"polish.url must start with http:// or https:// (got {url!r})"},
+                status_code=400,
+            )
+
+        def _list() -> dict[str, Any]:
+            import requests  # lazy, mirrors the rest of this module
+
+            from ..polish import LMSTUDIO_DEFAULT_URL, OLLAMA_DEFAULT_URL
+
+            base = url
+            hints = {
+                "ollama": "is Ollama running? `ollama list` shows what is installed",
+                "lmstudio": "in LM Studio, open the Developer tab and turn the "
+                "local server on",
+            }
+            try:
+                if backend == "ollama":
+                    r = requests.get(f"{base}/api/tags", timeout=5)
+                    r.raise_for_status()
+                    names = [m.get("name", "") for m in r.json().get("models", [])]
+                else:
+                    # LM Studio and friends speak the OpenAI models API.
+                    if backend == "lmstudio" and base == OLLAMA_DEFAULT_URL:
+                        base = LMSTUDIO_DEFAULT_URL
+                    headers = {}
+                    if cfg.polish.api_key:
+                        headers["Authorization"] = f"Bearer {cfg.polish.api_key}"
+                    r = requests.get(f"{base}/v1/models", timeout=5, headers=headers)
+                    r.raise_for_status()
+                    names = [m.get("id", "") for m in r.json().get("data", [])]
+            except (requests.RequestException, ValueError) as e:
+                return {
+                    "models": [],
+                    "error": str(e),
+                    "hint": hints.get(backend, f"no model list at {base} — check polish.url"),
+                }
+            return {"models": sorted({n for n in names if n})}
+
+        return await run_in_threadpool(_list)
+
     return app
 
 

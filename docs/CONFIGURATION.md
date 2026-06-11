@@ -53,9 +53,9 @@ any reason, Voicisst delivers the raw transcript instead and tells you why.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Turn the LLM cleanup on/off. |
-| `backend` | `"ollama"` | `"ollama"` \| `"openai"` (any OpenAI-compatible `/v1/chat/completions` server: llama.cpp, vLLM, LM Studio, ...) \| `"none"`. |
-| `model` | `"qwen3.5:4b"` | Model name. For Ollama, pull it first: `ollama pull qwen3.5:4b`. |
-| `url` | `"http://localhost:11434"` | Base URL of the Ollama or OpenAI-compatible server. |
+| `backend` | `"ollama"` | `"ollama"` \| `"lmstudio"` (LM Studio's built-in local server) \| `"openai"` (any other OpenAI-compatible `/v1/chat/completions` server: llama.cpp, vLLM, ...) \| `"none"`. |
+| `model` | `"qwen3.5:4b"` | Model name. For Ollama, pull it first: `ollama pull qwen3.5:4b`. In the web UI this is a dropdown listing the models your backend already has. |
+| `url` | `"http://localhost:11434"` | Base URL of the polish server. With `backend = "lmstudio"` and this still at the Ollama default, Voicisst uses LM Studio's default `http://localhost:1234` instead. |
 | `api_key` | `""` | API key, for OpenAI-compatible backends that want one. |
 | `keep_alive` | `"30m"` | How long Ollama keeps the model loaded after a request. |
 | `num_ctx` | `8192` | Context window passed to the backend. |

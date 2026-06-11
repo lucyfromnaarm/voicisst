@@ -177,6 +177,10 @@
               <label for="wiz-polish-ollama">Yes, with Ollama on this computer</label>
             </div>
             <div class="choice">
+              <input type="radio" name="wiz-polish" id="wiz-polish-lmstudio">
+              <label for="wiz-polish-lmstudio">Yes, with LM Studio on this computer</label>
+            </div>
+            <div class="choice">
               <input type="radio" name="wiz-polish" id="wiz-polish-openai">
               <label for="wiz-polish-openai">Yes, with an OpenAI-compatible server</label>
             </div>
@@ -188,7 +192,11 @@
           <div id="wiz-polish-opts">
             <div class="row">
               <label for="wiz-polish-model">Model</label>
-              <input type="text" id="wiz-polish-model" autocomplete="off" spellcheck="false">
+              <input type="text" id="wiz-polish-model" list="wiz-polish-models"
+                autocomplete="off" spellcheck="false">
+              <datalist id="wiz-polish-models"></datalist>
+              <p class="help">The list shows models already installed on the
+              backend you picked. You can also type a name.</p>
             </div>
             <div class="row">
               <label for="wiz-polish-url">Address</label>

@@ -435,6 +435,18 @@ legend {
 }
 .section-details { margin: 1.1rem 0; }
 
+/* "More options" disclosure inside a settings section */
+.adv-details { margin-top: 0.9rem; }
+.adv-details summary {
+  cursor: pointer;
+  font-weight: 550;
+  color: var(--ink-soft);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.adv-details[open] summary { margin-bottom: 0.3rem; }
+
 /* conditional-visibility marks ("Show all settings" mode) */
 .not-used {
   font-weight: 400;

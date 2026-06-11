@@ -13,6 +13,7 @@ process; the model reloads on the next polish call.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shutil
 import subprocess
@@ -28,6 +29,12 @@ from .textproc import strip_quotes, strip_think
 
 if TYPE_CHECKING:
     from .config import Config, PolishConfig
+
+# Default base URLs per backend. When polish.backend is "lmstudio" but
+# polish.url still points at the untouched Ollama default, we swap in LM
+# Studio's default so picking the backend is enough.
+OLLAMA_DEFAULT_URL = "http://localhost:11434"
+LMSTUDIO_DEFAULT_URL = "http://localhost:1234"
 
 # Ported verbatim from the prototype (flow.py), then extended with the
 # MULTILINGUAL section for Whisper's 100+ auto-detected languages.
@@ -184,6 +191,11 @@ def _ollama_error_hint(e: Exception, model: str) -> str:
 def _openai_error_hint(e: Exception, cfg: PolishConfig) -> str:
     s = str(e)
     if isinstance(e, requests.ConnectionError):
+        if (cfg.backend or "").strip().lower() == "lmstudio":
+            return (
+                f"no server at {cfg.url} — in LM Studio, open the Developer "
+                "tab and turn the local server on"
+            )
         return f"no server at {cfg.url} — is your OpenAI-compatible server running?"
     if isinstance(e, requests.Timeout):
         return "polish timeout — raising polish.timeout may help"
@@ -572,11 +584,18 @@ def get_polisher(cfg: Config | PolishConfig) -> Polisher | None:
         return None
     if backend == "ollama":
         return OllamaPolisher(pc)
+    if backend in ("lmstudio", "lm-studio", "lm_studio"):
+        # LM Studio speaks the OpenAI API on its own port. If the URL is
+        # still the Ollama default, point it at LM Studio's instead.
+        if pc.url.rstrip("/") == OLLAMA_DEFAULT_URL:
+            pc = dataclasses.replace(pc, url=LMSTUDIO_DEFAULT_URL)
+        return OpenAICompatPolisher(pc)
     if backend in ("openai", "openai-compat", "openai_compat"):
         return OpenAICompatPolisher(pc)
     _notify(
         "unknown polish backend",
-        f"polish.backend = {pc.backend!r} — use 'ollama', 'openai' or 'none'; polish disabled",
+        f"polish.backend = {pc.backend!r} — use 'ollama', 'lmstudio', "
+        "'openai' or 'none'; polish disabled",
         urgency="normal",
     )
     return None

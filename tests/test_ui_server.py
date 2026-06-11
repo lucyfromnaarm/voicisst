@@ -839,6 +839,95 @@ def test_polish_test_default_sample(cfg: Config, config_file: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# /api/polish/models
+
+
+class _FakeModelsResponse:
+    def __init__(self, payload: dict, status: int = 200):
+        self._payload = payload
+        self.status_code = status
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            import requests
+
+            raise requests.HTTPError(f"{self.status_code}")
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def test_polish_models_ollama(
+    cfg: Config, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_get(url: str, **kw: Any) -> _FakeModelsResponse:
+        calls.append(url)
+        return _FakeModelsResponse({"models": [{"name": "qwen3.5:4b"}, {"name": "a-model"}]})
+
+    monkeypatch.setattr("requests.get", fake_get)
+    client = make_client(cfg, config_file=config_file)
+    body = client.get("/api/polish/models").json()
+    assert body == {"models": ["a-model", "qwen3.5:4b"]}  # sorted, names only
+    assert calls == ["http://localhost:11434/api/tags"]
+
+
+def test_polish_models_lmstudio_uses_openai_api_and_port(
+    cfg: Config, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_get(url: str, **kw: Any) -> _FakeModelsResponse:
+        calls.append(url)
+        return _FakeModelsResponse({"data": [{"id": "qwen2.5-7b-instruct"}]})
+
+    monkeypatch.setattr("requests.get", fake_get)
+    client = make_client(cfg, config_file=config_file)
+    body = client.get("/api/polish/models?backend=lmstudio").json()
+    assert body == {"models": ["qwen2.5-7b-instruct"]}
+    # cfg.polish.url is still the Ollama default, so LM Studio's port is used
+    assert calls == ["http://localhost:1234/v1/models"]
+
+
+def test_polish_models_respects_query_url(
+    cfg: Config, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+
+    def fake_get(url: str, **kw: Any) -> _FakeModelsResponse:
+        calls.append(url)
+        return _FakeModelsResponse({"models": []})
+
+    monkeypatch.setattr("requests.get", fake_get)
+    client = make_client(cfg, config_file=config_file)
+    r = client.get("/api/polish/models?backend=ollama&url=http://big-box:11434/")
+    assert r.json() == {"models": []}
+    assert calls == ["http://big-box:11434/api/tags"]
+
+
+def test_polish_models_backend_down_gives_hint(
+    cfg: Config, config_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import requests
+
+    def fake_get(url: str, **kw: Any) -> _FakeModelsResponse:
+        raise requests.ConnectionError("refused")
+
+    monkeypatch.setattr("requests.get", fake_get)
+    client = make_client(cfg, config_file=config_file)
+    body = client.get("/api/polish/models").json()
+    assert body["models"] == []
+    assert "ollama" in body["hint"].lower()
+
+
+def test_polish_models_rejects_non_http_url(cfg: Config, config_file: Path) -> None:
+    client = make_client(cfg, config_file=config_file)
+    r = client.get("/api/polish/models?url=file:///etc/passwd")
+    assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
 # Lazy-import hints + serve_ui
 
 

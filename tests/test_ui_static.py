@@ -284,6 +284,54 @@ def test_schema_when_keys_gate_conditional_fields() -> None:
                 assert expected in fields[key]["options"], f"{key}={expected!r}"
 
 
+def test_schema_lmstudio_model_dropdown_and_advanced_flags() -> None:
+    schema = _extract_schema()
+    fields = _schema_fields(schema)
+
+    # LM Studio is a first-class polish backend, in settings and the wizard.
+    assert "lmstudio" in fields["polish.backend"]["options"]
+    assert 'id="wiz-polish-lmstudio"' in INDEX
+
+    # The model field is a datalist dropdown fed by /api/polish/models.
+    assert fields["polish.model"].get("widget") == "models"
+    assert "/api/polish/models" in APP_JS
+    assert 'list="wiz-polish-models"' in INDEX
+    assert 'id="wiz-polish-models"' in INDEX
+
+    # The API key only shows for backends that can need one.
+    assert fields["polish.api_key"]["when"] == {"polish.backend": "openai"}
+
+    # Rarely-touched knobs are flagged advanced (rendered behind a closed
+    # "More options" disclosure); the everyday essentials are not.
+    advanced = {key for key, entry in fields.items() if entry.get("advanced")}
+    for key in (
+        "engine.request_timeout",
+        "whisper.beam_size",
+        "polish.num_ctx",
+        "polish.vram_unload_below_mb",
+        "audio.rms_gate",
+        "output.key_delay_ms",
+        "ui.web_port",
+    ):
+        assert key in advanced, key
+    for key in (
+        "engine.mode",
+        "whisper.model",
+        "whisper.language",
+        "polish.enabled",
+        "polish.backend",
+        "polish.model",
+        "hotkey.keys",
+        "hotkey.mode",
+        "audio.input_device",
+        "output.mode",
+        "dictionary.words",
+        "history.enabled",
+    ):
+        assert key not in advanced, key
+    assert "More options" in APP_JS
+
+
 def test_show_all_toggle_and_remote_note_wired() -> None:
     # The escape hatch exists in the markup, with a proper label.
     assert 'id="show-all"' in INDEX

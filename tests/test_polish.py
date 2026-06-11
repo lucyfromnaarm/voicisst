@@ -573,6 +573,19 @@ def test_get_polisher_openai() -> None:
     assert isinstance(get_polisher(make_cfg(backend="openai")), OpenAICompatPolisher)
 
 
+def test_get_polisher_lmstudio_swaps_default_url() -> None:
+    p = get_polisher(make_cfg(backend="lmstudio"))
+    assert isinstance(p, OpenAICompatPolisher)
+    # the untouched Ollama default URL becomes LM Studio's default
+    assert p.cfg.url == "http://localhost:1234"
+
+
+def test_get_polisher_lmstudio_keeps_custom_url() -> None:
+    p = get_polisher(make_cfg(backend="lmstudio", url="http://big-box:9999"))
+    assert isinstance(p, OpenAICompatPolisher)
+    assert p.cfg.url == "http://big-box:9999"
+
+
 def test_get_polisher_accepts_full_config() -> None:
     cfg = Config()
     cfg.polish.backend = "ollama"

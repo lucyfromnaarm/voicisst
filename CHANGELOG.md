@@ -6,6 +6,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **LM Studio backend** (`polish.backend = "lmstudio"`): polish through LM
+  Studio's built-in local server. Picking it is enough — if `polish.url` is
+  still the Ollama default, Voicisst uses LM Studio's `http://localhost:1234`
+  on its own, and the web UI swaps the address field for you.
+- **Model dropdown**: the polish model fields in Settings and the setup
+  wizard now list the models already installed on your backend (Ollama or
+  LM Studio), fetched from a new local `/api/polish/models` endpoint. You
+  can still type any model name.
+
+### Changed
+
+- **Shorter settings page**: each section now shows only the settings most
+  people touch; the rest sit behind a closed "More options" disclosure. The
+  polish API key field only appears for the `openai` backend.
+
 ## [0.2.0] - 2026-06-11
 
 A web UI, so nobody has to edit TOML by hand unless they want to.

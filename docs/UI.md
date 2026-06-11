@@ -119,7 +119,12 @@ there on the page: run `voicisst run` and try your hotkey.
 
 The Settings view has a form for every config section — engine, whisper,
 polish, hotkey, audio, output, dictionary, and the rest — with each
-field labelled and explained in place. Two sections get special editors:
+field labelled and explained in place. Each section shows only the handful
+of settings you're likely to touch; the rest sit behind a closed "More
+options" disclosure, so the page stays short on a low-energy day. The
+polish model field is a dropdown listing the models already installed on
+your backend (Ollama or LM Studio) — you can still type any name. Two
+sections get special editors:
 
 - **Replacements**: rows of find → replace pairs (e.g. "vs code" →
   "VS Code"), applied after polish.

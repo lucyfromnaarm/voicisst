@@ -62,9 +62,9 @@ class WhisperConfig:
 @dataclass
 class PolishConfig:
     enabled: bool = True
-    backend: str = "ollama"  # "ollama" | "openai" | "none"
+    backend: str = "ollama"  # "ollama" | "lmstudio" | "openai" | "none"
     model: str = "qwen3.5:4b"
-    url: str = "http://localhost:11434"  # ollama or OpenAI-compatible base URL
+    url: str = "http://localhost:11434"  # ollama / LM Studio / OpenAI-compatible base URL
     api_key: str = ""
     keep_alive: str = "30m"
     num_ctx: int = 8192

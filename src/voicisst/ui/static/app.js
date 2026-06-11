@@ -14,7 +14,7 @@ const SCHEMA = {
       {"key": "mode", "label": "Mode", "type": "enum", "options": ["local", "remote"], "default": "local", "help": "'local' runs everything on this computer; 'remote' uses a voicisst server."},
       {"key": "server_url", "label": "Server address", "type": "str", "default": "", "help": "Web address of your voicisst server (remote mode), like big-box:8765.", "when": {"engine.mode": "remote"}},
       {"key": "token", "label": "Server token", "type": "str", "default": "", "help": "Must match the token the server was started with.", "when": {"engine.mode": "remote"}},
-      {"key": "request_timeout", "label": "Request timeout (seconds)", "type": "float", "default": 120.0, "help": "How long to wait for the server before giving up.", "when": {"engine.mode": "remote"}}
+      {"key": "request_timeout", "label": "Request timeout (seconds)", "type": "float", "default": 120.0, "help": "How long to wait for the server before giving up.", "when": {"engine.mode": "remote"}, "advanced": true}
     ]
   },
   "whisper": {
@@ -22,11 +22,11 @@ const SCHEMA = {
     "intro": "The model that hears you.",
     "fields": [
       {"key": "model", "label": "Model", "type": "str", "default": "auto", "help": "'auto' picks large-v3-turbo on a GPU and small on a CPU; any faster-whisper model name works.", "when": {"engine.mode": "local"}},
-      {"key": "device", "label": "Device", "type": "enum", "options": ["auto", "cuda", "cpu"], "default": "auto", "help": "Where Whisper runs: 'auto', 'cuda' (GPU), or 'cpu'.", "when": {"engine.mode": "local"}},
-      {"key": "compute", "label": "Compute type", "type": "str", "default": "", "help": "Advanced: faster-whisper compute type override. Usually leave empty.", "when": {"engine.mode": "local"}},
+      {"key": "device", "label": "Device", "type": "enum", "options": ["auto", "cuda", "cpu"], "default": "auto", "help": "Where Whisper runs: 'auto', 'cuda' (GPU), or 'cpu'.", "when": {"engine.mode": "local"}, "advanced": true},
+      {"key": "compute", "label": "Compute type", "type": "str", "default": "", "help": "faster-whisper compute type override. Usually leave empty.", "when": {"engine.mode": "local"}, "advanced": true},
       {"key": "language", "label": "Language", "type": "str", "default": "auto", "help": "'auto' detects any of 100+ languages, or set a code like 'en' or 'es'."},
-      {"key": "beam_size", "label": "Beam size", "type": "int", "default": 5, "help": "How many guesses Whisper weighs; higher is slower and slightly more accurate.", "when": {"engine.mode": "local"}},
-      {"key": "vad_filter", "label": "Filter silence (VAD)", "type": "bool", "default": false, "help": "Skip long silent stretches before transcribing.", "when": {"engine.mode": "local"}}
+      {"key": "beam_size", "label": "Beam size", "type": "int", "default": 5, "help": "How many guesses Whisper weighs; higher is slower and slightly more accurate.", "when": {"engine.mode": "local"}, "advanced": true},
+      {"key": "vad_filter", "label": "Filter silence (VAD)", "type": "bool", "default": false, "help": "Skip long silent stretches before transcribing.", "when": {"engine.mode": "local"}, "advanced": true}
     ]
   },
   "polish": {
@@ -35,18 +35,18 @@ const SCHEMA = {
     "when": {"engine.mode": "local"},
     "fields": [
       {"key": "enabled", "label": "Polish my words", "type": "bool", "default": true, "help": "Turn the LLM cleanup on or off. Off keeps the raw transcript."},
-      {"key": "backend", "label": "Backend", "type": "enum", "options": ["ollama", "openai", "none"], "default": "ollama", "help": "'ollama', 'openai' (any OpenAI-compatible server), or 'none'."},
-      {"key": "model", "label": "Model", "type": "str", "default": "qwen3.5:4b", "help": "Which LLM cleans up your text."},
-      {"key": "url", "label": "Address", "type": "str", "default": "http://localhost:11434", "help": "Where the polish backend lives — usually your local Ollama."},
-      {"key": "api_key", "label": "API key", "type": "str", "default": "", "help": "Only for OpenAI-compatible backends that need one."},
-      {"key": "keep_alive", "label": "Keep model loaded for", "type": "str", "default": "30m", "help": "How long the polish model stays in memory between uses."},
-      {"key": "num_ctx", "label": "Context window", "type": "int", "default": 8192, "help": "How much text the polish model can consider at once."},
-      {"key": "num_predict", "label": "Maximum reply length", "type": "int", "default": 2048, "help": "The longest answer the polish model may write."},
-      {"key": "think", "label": "Let the model think", "type": "bool", "default": false, "help": "Thinking improves long texts but adds seconds of waiting per dictation."},
-      {"key": "think_min_chars", "label": "Think only above (characters)", "type": "int", "default": 100, "help": "Even with thinking on, skip it for dictations shorter than this."},
-      {"key": "num_gpu", "label": "GPU layers", "type": "int", "default": -1, "help": "-1 lets the backend decide how much of the model runs on the GPU."},
-      {"key": "timeout", "label": "Timeout (seconds)", "type": "float", "default": 60.0, "help": "If polish takes longer than this, you get the raw transcript instead."},
-      {"key": "vram_unload_below_mb", "label": "Unload below free VRAM (MB)", "type": "int", "default": 0, "help": "Free the polish model when video memory runs low. 0 = never."}
+      {"key": "backend", "label": "Backend", "type": "enum", "options": ["ollama", "lmstudio", "openai", "none"], "default": "ollama", "help": "'ollama', 'lmstudio' (LM Studio's local server), 'openai' (any OpenAI-compatible server), or 'none'."},
+      {"key": "model", "label": "Model", "type": "str", "widget": "models", "default": "qwen3.5:4b", "help": "Which LLM cleans up your text. The list shows what is installed on your backend; you can also type a name."},
+      {"key": "url", "label": "Address", "type": "str", "default": "http://localhost:11434", "help": "Where the polish backend lives. Ollama uses port 11434, LM Studio 1234."},
+      {"key": "api_key", "label": "API key", "type": "str", "default": "", "help": "Only for OpenAI-compatible servers that need one.", "when": {"polish.backend": "openai"}},
+      {"key": "keep_alive", "label": "Keep model loaded for", "type": "str", "default": "30m", "help": "How long the polish model stays in memory between uses.", "advanced": true},
+      {"key": "num_ctx", "label": "Context window", "type": "int", "default": 8192, "help": "How much text the polish model can consider at once.", "advanced": true},
+      {"key": "num_predict", "label": "Maximum reply length", "type": "int", "default": 2048, "help": "The longest answer the polish model may write.", "advanced": true},
+      {"key": "think", "label": "Let the model think", "type": "bool", "default": false, "help": "Thinking improves long texts but adds seconds of waiting per dictation.", "advanced": true},
+      {"key": "think_min_chars", "label": "Think only above (characters)", "type": "int", "default": 100, "help": "Even with thinking on, skip it for dictations shorter than this.", "advanced": true},
+      {"key": "num_gpu", "label": "GPU layers", "type": "int", "default": -1, "help": "-1 lets the backend decide how much of the model runs on the GPU.", "advanced": true},
+      {"key": "timeout", "label": "Timeout (seconds)", "type": "float", "default": 60.0, "help": "If polish takes longer than this, you get the raw transcript instead.", "advanced": true},
+      {"key": "vram_unload_below_mb", "label": "Unload below free VRAM (MB)", "type": "int", "default": 0, "help": "Free the polish model when video memory runs low. 0 = never.", "advanced": true}
     ]
   },
   "hotkey": {
@@ -55,19 +55,19 @@ const SCHEMA = {
     "fields": [
       {"key": "keys", "label": "Keys", "type": "list", "default": [], "help": "Key names that trigger dictation. The Setup page can capture one for you."},
       {"key": "mode", "label": "Style", "type": "enum", "options": ["hold", "toggle"], "default": "hold", "help": "'hold' = keep the key down while speaking; 'toggle' = tap to start, tap to stop."},
-      {"key": "backend", "label": "Backend", "type": "enum", "options": ["auto", "evdev", "pynput"], "default": "auto", "help": "How key presses are watched. Leave on 'auto'.", "option_when": {"evdev": {"platform": "linux"}}}
+      {"key": "backend", "label": "Backend", "type": "enum", "options": ["auto", "evdev", "pynput"], "default": "auto", "help": "How key presses are watched. Leave on 'auto'.", "option_when": {"evdev": {"platform": "linux"}}, "advanced": true}
     ]
   },
   "audio": {
     "label": "Audio",
     "intro": "Recording and loudness.",
     "fields": [
-      {"key": "sample_rate", "label": "Sample rate (Hz)", "type": "int", "default": 16000, "help": "16000 is what Whisper expects. Rarely needs changing."},
+      {"key": "sample_rate", "label": "Sample rate (Hz)", "type": "int", "default": 16000, "help": "16000 is what Whisper expects. Rarely needs changing.", "advanced": true},
       {"key": "input_device", "label": "Microphone", "type": "str", "default": "", "help": "Microphone name or number. Empty = system default."},
-      {"key": "min_record_ms", "label": "Shortest recording (ms)", "type": "int", "default": 300, "help": "Recordings shorter than this are ignored as accidental taps."},
-      {"key": "max_record_ms", "label": "Longest recording (ms)", "type": "int", "default": 120000, "help": "Recording stops on its own after this long."},
-      {"key": "muted_rms", "label": "Muted threshold", "type": "float", "default": 0.00001, "help": "Below this loudness the microphone is treated as muted."},
-      {"key": "rms_gate", "label": "Quiet threshold", "type": "float", "default": 0.005, "help": "Below this loudness a recording is dropped as accidental."},
+      {"key": "min_record_ms", "label": "Shortest recording (ms)", "type": "int", "default": 300, "help": "Recordings shorter than this are ignored as accidental taps.", "advanced": true},
+      {"key": "max_record_ms", "label": "Longest recording (ms)", "type": "int", "default": 120000, "help": "Recording stops on its own after this long.", "advanced": true},
+      {"key": "muted_rms", "label": "Muted threshold", "type": "float", "default": 0.00001, "help": "Below this loudness the microphone is treated as muted.", "advanced": true},
+      {"key": "rms_gate", "label": "Quiet threshold", "type": "float", "default": 0.005, "help": "Below this loudness a recording is dropped as accidental.", "advanced": true},
       {"key": "auto_stop_silence_s", "label": "Auto-stop after silence (seconds)", "type": "float", "default": 0.0, "help": "Stop on its own after this much quiet — great hands-free. 0 = off."},
       {"key": "normalize", "label": "Boost quiet speech", "type": "bool", "default": true, "help": "Whisper-quiet and tired voices get boosted before transcribing."}
     ]
@@ -77,20 +77,20 @@ const SCHEMA = {
     "intro": "How the text lands in your apps.",
     "fields": [
       {"key": "mode", "label": "Delivery", "type": "enum", "options": ["paste", "type"], "default": "paste", "help": "'paste' is fast and reliable; 'type' presses each key one by one."},
-      {"key": "stream", "label": "Live typing", "type": "bool", "default": false, "help": "Type words while you speak, then replace them with the polished text."},
-      {"key": "stream_tick_ms", "label": "Live refresh (ms)", "type": "int", "default": 600, "help": "How often the live transcript updates while streaming."},
-      {"key": "key_delay_ms", "label": "Delay between keys (ms)", "type": "int", "default": 0, "help": "Slow down per-key typing if an app drops characters."},
-      {"key": "key_hold_ms", "label": "Key hold time (ms)", "type": "int", "default": 0, "help": "How long each key stays pressed when typing."},
-      {"key": "paste_chord", "label": "Paste shortcut", "type": "enum", "options": ["auto", "ctrl-v", "ctrl-shift-v", "cmd-v"], "default": "auto", "help": "Which paste shortcut to press. 'auto' picks the usual one for your system.", "option_when": {"cmd-v": {"platform": "darwin"}}},
+      {"key": "stream", "label": "Live typing", "type": "bool", "default": false, "help": "Type words while you speak, then replace them with the polished text.", "advanced": true},
+      {"key": "stream_tick_ms", "label": "Live refresh (ms)", "type": "int", "default": 600, "help": "How often the live transcript updates while streaming.", "advanced": true},
+      {"key": "key_delay_ms", "label": "Delay between keys (ms)", "type": "int", "default": 0, "help": "Slow down per-key typing if an app drops characters.", "advanced": true},
+      {"key": "key_hold_ms", "label": "Key hold time (ms)", "type": "int", "default": 0, "help": "How long each key stays pressed when typing.", "advanced": true},
+      {"key": "paste_chord", "label": "Paste shortcut", "type": "enum", "options": ["auto", "ctrl-v", "ctrl-shift-v", "cmd-v"], "default": "auto", "help": "Which paste shortcut to press. 'auto' picks the usual one for your system.", "option_when": {"cmd-v": {"platform": "darwin"}}, "advanced": true},
       {"key": "newline_mode", "label": "New lines", "type": "enum", "options": ["shift-enter", "enter"], "default": "shift-enter", "help": "Chat apps treat plain Enter as send; shift-enter avoids that."},
-      {"key": "terminal_classes", "label": "Terminal windows", "type": "list", "default": ["kitty", "alacritty", "foot", "wezterm", "konsole", "org.gnome.Terminal", "xterm", "ptyxis", "terminal", "iterm2", "windowsterminal", "cmd.exe", "powershell"], "help": "Window names treated as terminals — text is copied there, not pasted."}
+      {"key": "terminal_classes", "label": "Terminal windows", "type": "list", "default": ["kitty", "alacritty", "foot", "wezterm", "konsole", "org.gnome.Terminal", "xterm", "ptyxis", "terminal", "iterm2", "windowsterminal", "cmd.exe", "powershell"], "help": "Window names treated as terminals — text is copied there, not pasted.", "advanced": true}
     ]
   },
   "dictionary": {
     "label": "Dictionary",
     "intro": "Names and jargon Voicisst should spell correctly.",
     "fields": [
-      {"key": "path", "label": "Extra word file", "type": "str", "default": "", "help": "A file with one word per line. Empty = the default dictionary.txt."},
+      {"key": "path", "label": "Extra word file", "type": "str", "default": "", "help": "A file with one word per line. Empty = the default dictionary.txt.", "advanced": true},
       {"key": "words", "label": "Words", "type": "list", "widget": "textarea", "default": [], "help": "One name or term per line — they guide both transcription and polish."},
       {"key": "use_selection", "label": "Use highlighted text", "type": "bool", "default": true, "help": "Linux: text you have selected guides spelling for that dictation.", "when": {"platform": "linux"}}
     ]
@@ -117,8 +117,8 @@ const SCHEMA = {
       {"key": "beep", "label": "Beeps", "type": "bool", "default": true, "help": "Soft tones when recording starts and stops."},
       {"key": "notify", "label": "Desktop notifications", "type": "bool", "default": true, "help": "Short messages from Voicisst, like 'copied to clipboard'."},
       {"key": "tray", "label": "Tray icon", "type": "bool", "default": false, "help": "Show a small status icon while dictating."},
-      {"key": "web_port", "label": "This page's port", "type": "int", "default": 8766, "help": "Where this settings page is served (localhost only)."},
-      {"key": "open_browser", "label": "Open this page automatically", "type": "bool", "default": true, "help": "Open the browser when the UI starts."}
+      {"key": "web_port", "label": "This page's port", "type": "int", "default": 8766, "help": "Where this settings page is served (localhost only).", "advanced": true},
+      {"key": "open_browser", "label": "Open this page automatically", "type": "bool", "default": true, "help": "Open the browser when the UI starts.", "advanced": true}
     ]
   },
   "history": {
@@ -369,6 +369,7 @@ function renderWizard() {
 
   if (store.wizard.step === 2) loadMics();
   if (store.wizard.step === 3) showCurrentHotkeys();
+  if (store.wizard.step === 5) loadWizardPolishModels();
   if (store.wizard.step === 6) showPlatform();
   if (store.wizard.step === 7) renderSummary();
 }
@@ -406,7 +407,7 @@ function collectStep(n) {
       v["polish.enabled"] = false;
     } else {
       v["polish.enabled"] = true;
-      v["polish.backend"] = $("#wiz-polish-openai").checked ? "openai" : "ollama";
+      v["polish.backend"] = wizardPolishBackend();
       const model = $("#wiz-polish-model").value.trim();
       if (model) v["polish.model"] = model;
       const url = $("#wiz-polish-url").value.trim();
@@ -441,7 +442,21 @@ async function prefillWizard() {
     $("#wiz-polish-opts").hidden = true;
   } else if (values.polish.backend === "openai") {
     $("#wiz-polish-openai").checked = true;
+  } else if (values.polish.backend === "lmstudio") {
+    $("#wiz-polish-lmstudio").checked = true;
   }
+}
+
+function wizardPolishBackend() {
+  if ($("#wiz-polish-openai").checked) return "openai";
+  if ($("#wiz-polish-lmstudio").checked) return "lmstudio";
+  return "ollama";
+}
+
+function loadWizardPolishModels() {
+  if ($("#wiz-polish-none").checked) return;
+  const url = $("#wiz-polish-url").value.trim() || schemaDefault("polish", "url");
+  fillModelList($("#wiz-polish-models"), wizardPolishBackend(), url);
 }
 
 function enterSetup() {
@@ -601,11 +616,24 @@ function wireWizard() {
     }
   });
 
-  for (const id of ["wiz-polish-ollama", "wiz-polish-openai", "wiz-polish-none"]) {
+  const polishRadios = [
+    "wiz-polish-ollama",
+    "wiz-polish-lmstudio",
+    "wiz-polish-openai",
+    "wiz-polish-none",
+  ];
+  for (const id of polishRadios) {
     document.getElementById(id).addEventListener("change", () => {
       $("#wiz-polish-opts").hidden = $("#wiz-polish-none").checked;
+      const urlInput = $("#wiz-polish-url");
+      const suggested = BACKEND_URLS[wizardPolishBackend()];
+      if (suggested && Object.values(BACKEND_URLS).includes(urlInput.value)) {
+        urlInput.value = suggested;
+      }
+      loadWizardPolishModels();
     });
   }
+  $("#wiz-polish-url").addEventListener("change", loadWizardPolishModels);
 
   $("#wiz-polish-test").addEventListener("click", async () => {
     const note = $("#wiz-polish-result");
@@ -829,6 +857,12 @@ function buildFieldRow(section, field, values) {
     });
   } else {
     control = el("input", { type: "text", id, "aria-describedby": helpId });
+    if (field.widget === "models") {
+      // The dropdown is a datalist: installed models to pick from, free
+      // text still allowed for models not pulled yet.
+      control.setAttribute("list", id + "-list");
+      row.append(el("datalist", { id: id + "-list" }));
+    }
     control.value = current === null || current === undefined ? "" : String(current);
     control.addEventListener("input", () =>
       markDirty(dotted, control.value, String(current))
@@ -837,6 +871,54 @@ function buildFieldRow(section, field, values) {
   if (WHEN_DRIVERS.has(dotted)) control.addEventListener("change", applyVisibility);
   row.append(control, help);
   return row;
+}
+
+/* ----------------------------------------------------------- model dropdown */
+
+/* Fill a <datalist> with the models installed on the polish backend. */
+let modelsFetchSeq = 0;
+async function fillModelList(list, backend, url) {
+  if (!list || backend === "none") return;
+  const seq = ++modelsFetchSeq;
+  const r = await api(
+    "/api/polish/models?backend=" + encodeURIComponent(backend) +
+      "&url=" + encodeURIComponent(url)
+  );
+  if (seq !== modelsFetchSeq) return; // a newer request superseded this one
+  list.replaceChildren();
+  for (const name of (r.body && r.body.models) || []) {
+    list.append(el("option", { value: name }));
+  }
+}
+
+function refreshPolishModels() {
+  const urlInput = document.getElementById("f-polish-url");
+  fillModelList(
+    document.getElementById("f-polish-model-list"),
+    whenValue("polish.backend"),
+    urlInput ? urlInput.value : ""
+  );
+}
+
+/* Each backend's usual address. Switching backends swaps the address field
+   between these defaults — a hand-edited address is left alone. */
+const BACKEND_URLS = { ollama: "http://localhost:11434", lmstudio: "http://localhost:1234" };
+
+function wirePolishBackend() {
+  const backendSel = document.getElementById("f-polish-backend");
+  const urlInput = document.getElementById("f-polish-url");
+  if (backendSel) {
+    backendSel.addEventListener("change", () => {
+      const suggested = BACKEND_URLS[backendSel.value];
+      const isDefault = Object.values(BACKEND_URLS).includes(urlInput && urlInput.value);
+      if (urlInput && suggested && isDefault && urlInput.value !== suggested) {
+        urlInput.value = suggested;
+        urlInput.dispatchEvent(new Event("input")); // register the edit
+      }
+      refreshPolishModels();
+    });
+  }
+  if (urlInput) urlInput.addEventListener("change", refreshPolishModels);
 }
 
 function buildReplacements(map) {
@@ -916,14 +998,29 @@ function buildSettingsForm(values) {
       fs.append(el("p", { class: "help", text: spec.help }));
       fs.append(buildReplacements(values.replacements || {}));
     } else {
-      for (const field of spec.fields) {
+      const rowFor = (field) => {
         const row = buildFieldRow(section, field, values);
         if (field.when) {
           const badge = notUsedBadge();
           row.querySelector("label").append(" ", badge);
           visRules.push({ el: row, when: field.when, badge });
         }
-        fs.append(row);
+        return row;
+      };
+      for (const field of spec.fields) {
+        if (!field.advanced) fs.append(rowFor(field));
+      }
+      // Rarely-touched knobs live behind a closed disclosure so the page
+      // stays short. Values inside still load and save normally.
+      const advanced = spec.fields.filter((field) => field.advanced);
+      if (advanced.length) {
+        const advBox = el(
+          "details",
+          { class: "adv-details" },
+          el("summary", { text: "More options" })
+        );
+        for (const field of advanced) advBox.append(rowFor(field));
+        fs.append(advBox);
       }
     }
     let node = fs;
@@ -955,6 +1052,8 @@ function buildSettingsForm(values) {
     }
   }
   applyVisibility();
+  wirePolishBackend();
+  refreshPolishModels();
 }
 
 async function enterSettings() {
