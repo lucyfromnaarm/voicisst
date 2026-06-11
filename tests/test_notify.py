@@ -1,4 +1,4 @@
-"""Headless tests for flow_dictation.notify (subprocess mocked per platform)."""
+"""Headless tests for voicisst.notify (subprocess mocked per platform)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from flow_dictation import notify as notify_mod
+from voicisst import notify as notify_mod
 
 
 class PopenRecorder:
@@ -43,8 +43,8 @@ def test_logs_to_stderr_when_enabled(
     popen: PopenRecorder, capsys: pytest.CaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(sys, "platform", "linux")
-    notify_mod.notify("flow ready", "hold the key")
-    assert "[flow ready] hold the key" in capsys.readouterr().err
+    notify_mod.notify("voicisst ready", "hold the key")
+    assert "[voicisst ready] hold the key" in capsys.readouterr().err
 
 
 def test_linux_uses_notify_send_with_timeout(
@@ -98,7 +98,7 @@ def test_darwin_escapes_backslashes_before_quotes(
 
 
 # The AUMID Windows registers for Windows PowerShell; toasts from an
-# unregistered AUMID (e.g. a bare 'Flow') are silently dropped.
+# unregistered AUMID (e.g. a bare 'Voicisst') are silently dropped.
 _PS_AUMID = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe"
 
 
@@ -124,7 +124,7 @@ def test_windows_toast_uses_registered_powershell_aumid(
     ((cmd, _kwargs),) = popen.calls
     script = cmd[-1]
     assert f"CreateToastNotifier('{_PS_AUMID}')" in script
-    assert "CreateToastNotifier('Flow')" not in script  # unregistered: never displays
+    assert "CreateToastNotifier('Voicisst')" not in script  # unregistered: never displays
 
 
 def test_windows_spawn_passes_create_no_window(

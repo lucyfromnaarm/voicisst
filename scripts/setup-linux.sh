@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Linux system setup for Flow (idempotent, multi-distro).
+# Linux system setup for Voicisst (idempotent, multi-distro).
 #
-# Installs the system packages Flow needs (ydotool, wl-clipboard, libnotify,
+# Installs the system packages Voicisst needs (ydotool, wl-clipboard, libnotify,
 # PortAudio), loads the uinput module at boot, writes a udev rule giving the
 # 'input' group access to /dev/uinput, adds you to that group, and installs
 # + starts a *user* ydotoold systemd unit (so its socket lives in your
@@ -129,19 +129,19 @@ else
 fi
 
 # --- 6. done ---------------------------------------------------------------------
-FLOW_UNIT_SRC="${REPO_ROOT:-<repo>}/packaging/systemd/flow.service"
+VOICISST_UNIT_SRC="${REPO_ROOT:-<repo>}/packaging/systemd/voicisst.service"
 cat <<EOF
 
 Linux setup done. Next:
   1. If you were just added to the 'input' group, log out and back in.
-  2. Verify everything:        flow selftest
-  3. Run it in the foreground: flow run
-  4. To start Flow at login as a user service:
-       install -Dm0644 "$FLOW_UNIT_SRC" \\
-           ~/.config/systemd/user/flow.service
+  2. Verify everything:        voicisst selftest
+  3. Run it in the foreground: voicisst run
+  4. To start Voicisst at login as a user service:
+       install -Dm0644 "$VOICISST_UNIT_SRC" \\
+           ~/.config/systemd/user/voicisst.service
        systemctl --user daemon-reload
-       systemctl --user enable --now flow.service
-       journalctl --user -u flow -f
-     (The unit expects 'flow' at ~/.local/bin/flow — edit ExecStart if yours
-      lives elsewhere; 'command -v flow' tells you where it is.)
+       systemctl --user enable --now voicisst.service
+       journalctl --user -u voicisst -f
+     (The unit expects 'voicisst' at ~/.local/bin/voicisst — edit ExecStart if yours
+      lives elsewhere; 'command -v voicisst' tells you where it is.)
 EOF

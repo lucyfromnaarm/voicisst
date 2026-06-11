@@ -59,25 +59,25 @@ jobs:
       - name: Install package and PyInstaller
         run: pip install '.[local,server]' pyinstaller
       - name: Build binary
-        run: pyinstaller --noconfirm packaging/pyinstaller/flow.spec
+        run: pyinstaller --noconfirm packaging/pyinstaller/voicisst.spec
       - name: Package (Unix)
         if: runner.os != 'Windows'
         # GITHUB_REF_NAME is the tag, e.g. v0.1.0 -> VERSION 0.1.0
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          tar -C dist -czf "flow-${VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" flow
+          tar -C dist -czf "voicisst-${VERSION}-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" voicisst
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          Compress-Archive -Path dist/flow -DestinationPath "flow-$version-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+          Compress-Archive -Path dist/voicisst -DestinationPath "voicisst-$version-${{ matrix.platform }}-${{ matrix.arch }}.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.platform }}-${{ matrix.arch }}
           path: |
-            flow-*.tar.gz
-            flow-*.zip
+            voicisst-*.tar.gz
+            voicisst-*.zip
           if-no-files-found: error
 
   release:

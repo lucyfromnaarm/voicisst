@@ -1,4 +1,4 @@
-"""Tests for flow_dictation.polish — headless, requests fully mocked."""
+"""Tests for voicisst.polish — headless, requests fully mocked."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 import requests
 
-from flow_dictation import polish as polish_mod
-from flow_dictation.config import Config, PolishConfig
-from flow_dictation.polish import (
+from voicisst import polish as polish_mod
+from voicisst.config import Config, PolishConfig
+from voicisst.polish import (
     POLISH_SYSTEM_PROMPT,
     OllamaPolisher,
     OpenAICompatPolisher,

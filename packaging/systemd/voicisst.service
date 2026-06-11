@@ -1,0 +1,38 @@
+# Voicisst — voice dictation, user systemd unit.
+#
+# Assumes the `voicisst` entry point is at ~/.local/bin/voicisst (the default for
+# `pipx install`, `uv tool install`, and `pip install --user`).
+#
+# Install:
+#   install -Dm0644 voicisst.service ~/.config/systemd/user/voicisst.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now voicisst.service
+#   journalctl --user -u voicisst -f
+
+[Unit]
+Description=Voicisst — voice dictation (hold-to-talk)
+Documentation=https://github.com/lucyfromnaarm/voicisst
+After=graphical-session.target ydotoold.service
+Wants=ydotoold.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+Environment=YDOTOOL_SOCKET=%t/.ydotool_socket
+ExecStart=%h/.local/bin/voicisst run
+Restart=on-failure
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Light hardening — a full sandbox would block PyTorch/whisper JIT and PortAudio.
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=default.target

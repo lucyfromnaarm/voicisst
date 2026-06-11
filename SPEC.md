@@ -1,6 +1,6 @@
-# Flow — Architecture Specification
+# Voicisst — Architecture Specification
 
-Flow is a free, open-source voice-dictation app: speak into any app on any
+Voicisst is a free, open-source voice-dictation app: speak into any app on any
 OS, get clear, polished writing. This document is the **contract** between
 modules. Implementations must match the signatures and semantics here.
 
@@ -19,19 +19,19 @@ modules. Implementations must match the signatures and semantics here.
    auto-stop, audio cues, all hotkeys configurable. Built for users with
    limited energy/mobility (ME/CFS); minimal setup friction.
 7. **Three run modes**:
-   - **All-in-one** (`flow run`): capture + transcribe + polish + inject,
+   - **All-in-one** (`voicisst run`): capture + transcribe + polish + inject,
      all local.
-   - **Server** (`flow serve`): exposes transcription/polish over HTTP+WS
+   - **Server** (`voicisst serve`): exposes transcription/polish over HTTP+WS
      (runs on the big-GPU box).
-   - **Client** (`flow run --server URL`): capture + inject locally,
+   - **Client** (`voicisst run --server URL`): capture + inject locally,
      inference remote.
 8. **Cross-platform**: Linux (Wayland + X11), macOS, Windows.
 
 ## Repository layout
 
 ```
-pyproject.toml              dist: flow-dictation, CLI: flow
-src/flow_dictation/
+pyproject.toml              dist: voicisst, CLI: voicisst
+src/voicisst/
   __init__.py               __version__
   config.py                 TOML + env + CLI config (COMPLETE — do not edit)
   textproc.py               sanitize/strip_think/replacements (COMPLETE)
@@ -57,7 +57,7 @@ src/flow_dictation/
   protocol.py               WAV codec + message schema constants
   streaming.py              StreamingTyper (live typing w/ diff replace)
   dictation.py              DictationApp orchestrator
-  cli.py                    click CLI (flow run/serve/selftest/config)
+  cli.py                    click CLI (voicisst run/serve/selftest/config)
   selftest.py               environment diagnostics
   tray.py                   optional pystray tray icon
 tests/                      pytest; NO hardware/network/GPU at test time
@@ -95,7 +95,7 @@ cfg = load_config(path=None, env=os.environ, overrides={"whisper.model": "small"
 cfg.whisper.resolved_model(device)   # "auto" -> "large-v3-turbo" (cuda) / "small" (cpu)
 config_path() -> Path                # platformdirs user config dir
 data_dir() -> Path
-default_config_toml() -> str         # documented template for `flow config init`
+default_config_toml() -> str         # documented template for `voicisst config init`
 ```
 
 ## engine/base.py (provided)
@@ -142,7 +142,7 @@ if a transcription is already running, return None). `health()` returns
 ### RemoteEngine (engine/remote.py)
 HTTP via `requests.Session` with `Authorization: Bearer <token>` when
 token set. Endpoints below. `open_stream` uses `websocket-client` (sync).
-Connection errors → `EngineError` with hint ("is `flow serve` running on
+Connection errors → `EngineError` with hint ("is `voicisst serve` running on
 <url>?"). `polish_stream` may yield once (single REST call) — that's fine.
 
 ## HTTP/WS protocol (protocol.py + server/app.py)
@@ -350,13 +350,13 @@ Behavior (port prototype worker_loop + run_loop, generalized):
 
 ## cli.py
 
-click group `flow`; invoking bare `flow` == `flow run`.
-- `flow run [--server URL] [--token T] [--stream/--no-stream] [--toggle]
+click group `voicisst`; invoking bare `voicisst` == `voicisst run`.
+- `voicisst run [--server URL] [--token T] [--stream/--no-stream] [--toggle]
   [--language L] [--config PATH] [--tray]`
-- `flow serve [--host H] [--port P] [--token T] [--config PATH]`
-- `flow selftest [--server URL]`
-- `flow config init|show|path`
-- `flow version`
+- `voicisst serve [--host H] [--port P] [--token T] [--config PATH]`
+- `voicisst selftest [--server URL]`
+- `voicisst config init|show|path`
+- `voicisst version`
 `main()` is the console entry point. Map CLI flags to config overrides.
 Catch EngineError → friendly message + exit 1, no traceback.
 
@@ -371,7 +371,7 @@ Steps print PASS/FAIL/SKIP; exit code 0/1. Must degrade gracefully headless.
 
 `run_tray(app: DictationApp, cfg) -> None` — optional pystray icon
 (generated PIL circle), menu: status, toggle polish, quit. ImportError →
-notify "tray extra not installed: pip install flow-dictation[tray]".
+notify "tray extra not installed: pip install voicisst[tray]".
 
 ## Packaging & CI
 
@@ -381,18 +381,18 @@ notify "tray extra not installed: pip install flow-dictation[tray]".
 - `release.yml`: on tag `v*` → (1) build sdist+wheel (`python -m build`),
   (2) PyInstaller onedir per OS (ubuntu-22.04, macos-13 x86_64, macos-14
   arm64, windows-latest) bundling `[local,server]`, zipped as
-  `flow-<version>-<os>-<arch>.{tar.gz,zip}`, (3) GitHub Release with all
+  `voicisst-<version>-<os>-<arch>.{tar.gz,zip}`, (3) GitHub Release with all
   artifacts + checksums, (4) optional PyPI publish job gated on
   `PYPI_API_TOKEN` secret existing.
-- `packaging/pyinstaller/flow.spec`: entry `flow_dictation.cli:main`,
+- `packaging/pyinstaller/voicisst.spec`: entry `voicisst.cli:main`,
   collect ctranslate2/faster_whisper data, sounddevice's portaudio binary.
 - `scripts/install.sh`: pipx/uv-based install for Linux/macOS + offer
   `setup-linux.sh` (port of setup.sh: multi-distro dnf/apt/pacman/zypper,
   ydotool, udev uinput rule, input group, user systemd units).
 - `scripts/install.ps1`: Windows pipx/uv install.
-- `packaging/systemd/`: flow.service + ydotoold.service (user units,
-  paths via `%h/.local/bin/flow run`).
-- `packaging/macos/com.flowdictation.flow.plist`: LaunchAgent template.
+- `packaging/systemd/`: voicisst.service + ydotoold.service (user units,
+  paths via `%h/.local/bin/voicisst run`).
+- `packaging/macos/one.octavia.voicisst.plist`: LaunchAgent template.
 
 ## Testing conventions
 

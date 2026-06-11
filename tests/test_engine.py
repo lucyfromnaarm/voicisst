@@ -14,13 +14,13 @@ import numpy as np
 import pytest
 import requests
 
-from flow_dictation.config import Config, load_config
-from flow_dictation.engine import get_engine
-from flow_dictation.engine.base import EngineError
-from flow_dictation.engine.local import LocalEngine
-from flow_dictation.engine.remote import RemoteEngine
-from flow_dictation.protocol import decode_wav, from_b64
 from helpers import fake_polish_module, fake_transcribe_module
+from voicisst.config import Config, load_config
+from voicisst.engine import get_engine
+from voicisst.engine.base import EngineError
+from voicisst.engine.local import LocalEngine
+from voicisst.engine.remote import RemoteEngine
+from voicisst.protocol import decode_wav, from_b64
 
 AUDIO_1S = np.zeros(16000, dtype=np.float32)
 
@@ -28,8 +28,8 @@ AUDIO_1S = np.zeros(16000, dtype=np.float32)
 @pytest.fixture
 def local(cfg: Config, monkeypatch: pytest.MonkeyPatch) -> tuple[Config, dict[str, Any]]:
     rec: dict[str, Any] = {}
-    monkeypatch.setitem(sys.modules, "flow_dictation.transcribe", fake_transcribe_module(rec))
-    monkeypatch.setitem(sys.modules, "flow_dictation.polish", fake_polish_module(rec))
+    monkeypatch.setitem(sys.modules, "voicisst.transcribe", fake_transcribe_module(rec))
+    monkeypatch.setitem(sys.modules, "voicisst.polish", fake_polish_module(rec))
     return cfg, rec
 
 
@@ -172,11 +172,11 @@ def test_local_health(local: tuple[Config, dict]) -> None:
 def test_local_missing_transcribe_module_hint(
     cfg: Config, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setitem(sys.modules, "flow_dictation.transcribe", None)  # forces ImportError
+    monkeypatch.setitem(sys.modules, "voicisst.transcribe", None)  # forces ImportError
     engine = LocalEngine(cfg)
     with pytest.raises(EngineError) as ei:
         engine.transcribe(AUDIO_1S, 16000)
-    assert "flow-dictation[local]" in ei.value.hint
+    assert "voicisst[local]" in ei.value.hint
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +380,7 @@ def test_remote_polish_stream_yields_input_on_failure(
 ) -> None:
     engine, _ = _remote(tmp_path, monkeypatch, [requests.ConnectionError("refused")])
     assert list(engine.polish_stream("um clean")) == ["um clean"]
-    assert "flow serve" in capsys.readouterr().err
+    assert "voicisst serve" in capsys.readouterr().err
 
 
 def test_remote_connection_error_hint(
@@ -389,7 +389,7 @@ def test_remote_connection_error_hint(
     engine, _ = _remote(tmp_path, monkeypatch, [requests.ConnectionError("refused")])
     with pytest.raises(EngineError) as ei:
         engine.transcribe(AUDIO_1S, 16000)
-    assert "is `flow serve` running at http://box:8765?" in ei.value.hint
+    assert "is `voicisst serve` running at http://box:8765?" in ei.value.hint
     assert "--host 0.0.0.0" in ei.value.hint
 
 
@@ -582,7 +582,7 @@ def test_remote_ws_connect_refused(
     engine, _ = _remote(tmp_path, monkeypatch, [])
     with pytest.raises(EngineError) as ei:
         engine.open_stream(16000)
-    assert "flow serve" in ei.value.hint
+    assert "voicisst serve" in ei.value.hint
 
 
 def test_remote_ws_finalize_timeout(

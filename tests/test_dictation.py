@@ -17,14 +17,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import flow_dictation.audio as audio_mod
-import flow_dictation.dictation as dictation_mod
-from flow_dictation.config import AudioConfig, Config, OutputConfig, load_config
-from flow_dictation.dictation import DictationApp
-from flow_dictation.engine.base import EngineError
-from flow_dictation.hotkeys.base import HotkeyListener
-from flow_dictation.inject.base import Injector
+import voicisst.audio as audio_mod
+import voicisst.dictation as dictation_mod
 from helpers import FakeEngine, FakeStreamSession, make_audio
+from voicisst.config import AudioConfig, Config, OutputConfig, load_config
+from voicisst.dictation import DictationApp
+from voicisst.engine.base import EngineError
+from voicisst.hotkeys.base import HotkeyListener
+from voicisst.inject.base import Injector
 
 LOUD = make_audio(1.5)  # rms ~0.18, well above the gate
 
@@ -574,7 +574,7 @@ def test_backspace_cancels_polish_falls_back_to_raw(app_cfg, monkeypatch):
 class FailingFinalizeSession(FakeStreamSession):
     def finalize(self, *, vocab: str = "") -> Iterator[str]:
         raise EngineError(
-            "flow server did not finish within 120s",
+            "voicisst server did not finish within 120s",
             hint="raise [engine] request_timeout",
         )
         yield  # pragma: no cover
@@ -682,7 +682,7 @@ def test_watchdog_stop_racing_toggle_start_never_double_starts(app_cfg, monkeypa
 
     class RacingQueue:
         def put(self, item):
-            if threading.current_thread().name == "flow-watchdog":
+            if threading.current_thread().name == "voicisst-watchdog":
                 time.sleep(0.08)  # the preemption window
             real_queue.put(item)
 

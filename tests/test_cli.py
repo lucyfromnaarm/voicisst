@@ -11,19 +11,19 @@ import numpy as np
 import pytest
 from click.testing import CliRunner
 
-import flow_dictation.audio as audio_mod
-import flow_dictation.cli as cli_mod
-import flow_dictation.clipboard as clipboard_mod
-import flow_dictation.config as config_mod
-import flow_dictation.inject as inject_mod
-import flow_dictation.selftest as selftest_mod
-import flow_dictation.server as server_mod
-import flow_dictation.tray as tray_mod
-from flow_dictation import __version__
-from flow_dictation.engine.base import EngineError
-from flow_dictation.hotkeys.evdev_listener import EvdevListener
-from flow_dictation.hotkeys.pynput_listener import PynputListener
+import voicisst.audio as audio_mod
+import voicisst.cli as cli_mod
+import voicisst.clipboard as clipboard_mod
+import voicisst.config as config_mod
+import voicisst.inject as inject_mod
+import voicisst.selftest as selftest_mod
+import voicisst.server as server_mod
+import voicisst.tray as tray_mod
 from helpers import FakeEngine, make_audio
+from voicisst import __version__
+from voicisst.engine.base import EngineError
+from voicisst.hotkeys.evdev_listener import EvdevListener
+from voicisst.hotkeys.pynput_listener import PynputListener
 
 
 @pytest.fixture
@@ -162,7 +162,7 @@ def test_config_option_rejects_directory(runner, tmp_path):
 
 
 def test_main_missing_config_exits_2(monkeypatch, capsys, tmp_path):
-    monkeypatch.setattr(sys, "argv", ["flow", "run", "--config", str(tmp_path / "nope.toml")])
+    monkeypatch.setattr(sys, "argv", ["voicisst", "run", "--config", str(tmp_path / "nope.toml")])
     with pytest.raises(SystemExit) as exc:
         cli_mod.main()
     assert exc.value.code == 2
@@ -325,7 +325,7 @@ def test_main_engine_error_prints_hint_and_exits_1(monkeypatch, capsys, tmp_path
 
     monkeypatch.setattr(cli_mod, "get_engine", boom)
     monkeypatch.setattr(
-        sys, "argv", ["flow", "run", "--config", str(write_config(tmp_path))]
+        sys, "argv", ["voicisst", "run", "--config", str(write_config(tmp_path))]
     )
     with pytest.raises(SystemExit) as exc:
         cli_mod.main()

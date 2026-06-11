@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Voicisst — voice dictation LaunchAgent.
+
+  Assumes the `voicisst` entry point is at ~/.local/bin/voicisst (the default for
+  `pipx install` and `uv tool install`). launchd does not expand "~", so the
+  job goes through /bin/sh, which resolves $HOME and redirects logs to
+  ~/Library/Logs/voicisst.log.
+
+  Install:
+    cp one.octavia.voicisst.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/one.octavia.voicisst.plist
+  (or on older macOS: launchctl load -w ~/Library/LaunchAgents/one.octavia.voicisst.plist)
+
+  Remember: grant Accessibility + Microphone + Input Monitoring permissions
+  to the binary in System Settings > Privacy & Security.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>one.octavia.voicisst</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>exec "$HOME/.local/bin/voicisst" run >> "$HOME/Library/Logs/voicisst.log" 2>&amp;1</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>3</integer>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>StandardOutPath</key>
+    <string>/tmp/one.octavia.voicisst.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/one.octavia.voicisst.launchd.log</string>
+</dict>
+</plist>

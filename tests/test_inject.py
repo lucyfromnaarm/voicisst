@@ -11,16 +11,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_dictation import notify as notify_mod
-from flow_dictation.config import OutputConfig, load_config
-from flow_dictation.inject import get_injector
-from flow_dictation.inject import pynput_injector as pyn_mod
-from flow_dictation.inject import windowinfo as wi
-from flow_dictation.inject import xdotool as xdo_mod
-from flow_dictation.inject import ydotool as ydo_mod
-from flow_dictation.inject.pynput_injector import PynputInjector
-from flow_dictation.inject.xdotool import XdotoolInjector
-from flow_dictation.inject.ydotool import YdotoolInjector
+from voicisst import notify as notify_mod
+from voicisst.config import OutputConfig, load_config
+from voicisst.inject import get_injector
+from voicisst.inject import pynput_injector as pyn_mod
+from voicisst.inject import windowinfo as wi
+from voicisst.inject import xdotool as xdo_mod
+from voicisst.inject import ydotool as ydo_mod
+from voicisst.inject.pynput_injector import PynputInjector
+from voicisst.inject.xdotool import XdotoolInjector
+from voicisst.inject.ydotool import YdotoolInjector
 
 
 class RunRecorder:

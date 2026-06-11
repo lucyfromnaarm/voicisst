@@ -1,4 +1,4 @@
-# ydotoold — user instance, used by Flow to type into Wayland windows.
+# ydotoold — user instance, used by Voicisst to type into Wayland windows.
 #
 # Run as a *user* unit so the socket lives in XDG_RUNTIME_DIR and is owned
 # by you (the system-wide ydotoold puts a root-owned socket in /tmp).

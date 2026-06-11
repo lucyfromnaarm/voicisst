@@ -11,10 +11,10 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from flow_dictation.config import Config
-from flow_dictation.protocol import float_to_pcm16, to_b64
-from flow_dictation.server import create_app, serve
 from helpers import FakeEngine, fake_polish_module, fake_transcribe_module, make_wav
+from voicisst.config import Config
+from voicisst.protocol import float_to_pcm16, to_b64
+from voicisst.server import create_app, serve
 
 TOKEN = "s3cret"
 
@@ -238,7 +238,7 @@ def test_token_comparison_is_constant_time() -> None:
     # actually what the auth checks use.
     import inspect
 
-    from flow_dictation.server import app as app_module
+    from voicisst.server import app as app_module
 
     src = inspect.getsource(app_module)
     assert "hmac.compare_digest" in src
@@ -252,7 +252,7 @@ def test_token_comparison_is_constant_time() -> None:
 def test_rest_413_over_audio_cap(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("flow_dictation.server.app.MAX_AUDIO_BYTES", 1000)
+    monkeypatch.setattr("voicisst.server.app.MAX_AUDIO_BYTES", 1000)
     wav = make_wav(0.5, 16000)  # 16 kB WAV, over the (patched) 1000-byte cap
     for path in ("/v1/transcribe", "/v1/process"):
         r = client.post(path, json={"audio_b64": to_b64(wav)})
@@ -265,7 +265,7 @@ def test_rest_413_over_audio_cap(
 def test_rest_413_content_length_checked_early(
     client: TestClient, engine: FakeEngine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("flow_dictation.server.app.MAX_AUDIO_BYTES", 1000)
+    monkeypatch.setattr("voicisst.server.app.MAX_AUDIO_BYTES", 1000)
     # Body over cap*4/3 + 64 KiB: rejected from the Content-Length header
     # alone, before the body is parsed or any engine call happens.
     r = client.post("/v1/polish", json={"text": "x" * 70000})
@@ -283,7 +283,7 @@ def test_rest_audio_under_cap_accepted(client: TestClient) -> None:
 def test_ws_audio_cap_sends_error_and_closes(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("flow_dictation.server.app.MAX_AUDIO_SAMPLES", 8000)
+    monkeypatch.setattr("voicisst.server.app.MAX_AUDIO_SAMPLES", 8000)
     with client.websocket_connect("/v1/stream") as ws:
         ws.send_json({"type": "start", "sample_rate": 16000, "language": None, "vocab": ""})
         ws.send_bytes(_pcm_bytes(8001))  # one sample over the cap
@@ -313,8 +313,8 @@ def test_ws_audio_under_cap_streams_fine(client: TestClient) -> None:
 
 def _patch_serve_deps(monkeypatch: pytest.MonkeyPatch) -> tuple[dict[str, Any], list]:
     rec: dict[str, Any] = {}
-    monkeypatch.setitem(sys.modules, "flow_dictation.transcribe", fake_transcribe_module(rec))
-    monkeypatch.setitem(sys.modules, "flow_dictation.polish", fake_polish_module(rec))
+    monkeypatch.setitem(sys.modules, "voicisst.transcribe", fake_transcribe_module(rec))
+    monkeypatch.setitem(sys.modules, "voicisst.polish", fake_polish_module(rec))
     runs: list = []
     fake_uvicorn = types.ModuleType("uvicorn")
     fake_uvicorn.run = lambda app, **kw: runs.append((app, kw))  # type: ignore[attr-defined]

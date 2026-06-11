@@ -1,4 +1,4 @@
-"""Shared test helpers. Import-light: numpy + flow_dictation only.
+"""Shared test helpers. Import-light: numpy + voicisst only.
 
 Other test files do `from helpers import FakeEngine, make_wav, ...`.
 """
@@ -11,8 +11,8 @@ from typing import Any
 
 import numpy as np
 
-from flow_dictation.engine.base import Engine, StreamSession
-from flow_dictation.protocol import encode_wav
+from voicisst.engine.base import Engine, StreamSession
+from voicisst.protocol import encode_wav
 
 
 def make_audio(seconds: float = 0.5, sr: int = 16000) -> np.ndarray:
@@ -130,13 +130,13 @@ class FakeEngine(Engine):
 
 # ---------------------------------------------------------------------------
 # Fake heavyweight modules for LocalEngine tests. Inject with:
-#   monkeypatch.setitem(sys.modules, "flow_dictation.transcribe", fake_transcribe_module(rec))
-#   monkeypatch.setitem(sys.modules, "flow_dictation.polish", fake_polish_module(rec))
+#   monkeypatch.setitem(sys.modules, "voicisst.transcribe", fake_transcribe_module(rec))
+#   monkeypatch.setitem(sys.modules, "voicisst.polish", fake_polish_module(rec))
 
 
 def fake_transcribe_module(record: dict[str, Any]) -> types.ModuleType:
     record.setdefault("transcribers", [])
-    mod = types.ModuleType("flow_dictation.transcribe")
+    mod = types.ModuleType("voicisst.transcribe")
 
     class Transcriber:
         def __init__(self, wcfg: Any):
@@ -167,7 +167,7 @@ def fake_transcribe_module(record: dict[str, Any]) -> types.ModuleType:
 def fake_polish_module(record: dict[str, Any]) -> types.ModuleType:
     record.setdefault("polishers", [])
     record.setdefault("watchdogs", [])
-    mod = types.ModuleType("flow_dictation.polish")
+    mod = types.ModuleType("voicisst.polish")
 
     class FakePolisher:
         def __init__(self, pcfg: Any = None) -> None:

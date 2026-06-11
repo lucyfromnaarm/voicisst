@@ -1,4 +1,4 @@
-"""Tests for flow_dictation.transcribe — fake faster_whisper/ctranslate2,
+"""Tests for voicisst.transcribe — fake faster_whisper/ctranslate2,
 no GPU, no model downloads, no audio hardware."""
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from flow_dictation.config import WhisperConfig
-from flow_dictation.transcribe import Transcriber, _pick_device
+from voicisst.config import WhisperConfig
+from voicisst.transcribe import Transcriber, _pick_device
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -141,7 +141,7 @@ def test_pick_device_directly(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_missing_faster_whisper_helpful_error(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_ctranslate2(monkeypatch, 0)
     monkeypatch.setitem(sys.modules, "faster_whisper", None)  # import -> ImportError
-    with pytest.raises(RuntimeError, match=r"flow-dictation\[local\]"):
+    with pytest.raises(RuntimeError, match=r"voicisst\[local\]"):
         Transcriber(WhisperConfig())
 
 
@@ -227,9 +227,9 @@ def test_transcribe_resamples_48k(
         calls.append((sr_from, sr_to))
         return resampled
 
-    fake_audio = types.ModuleType("flow_dictation.audio")
+    fake_audio = types.ModuleType("voicisst.audio")
     fake_audio.resample = fake_resample
-    monkeypatch.setitem(sys.modules, "flow_dictation.audio", fake_audio)
+    monkeypatch.setitem(sys.modules, "voicisst.audio", fake_audio)
 
     t.transcribe(np.zeros(48000, dtype=np.float32), sample_rate=48000)
     assert calls == [(48000, 16000)]
@@ -242,13 +242,13 @@ def test_transcribe_no_resample_at_16k(
 ) -> None:
     t = make_transcriber(monkeypatch)
 
-    fake_audio = types.ModuleType("flow_dictation.audio")
+    fake_audio = types.ModuleType("voicisst.audio")
 
     def fail_resample(*a: object) -> np.ndarray:
         raise AssertionError("resample must not be called at 16 kHz")
 
     fake_audio.resample = fail_resample
-    monkeypatch.setitem(sys.modules, "flow_dictation.audio", fake_audio)
+    monkeypatch.setitem(sys.modules, "voicisst.audio", fake_audio)
 
     assert t.transcribe(np.zeros(16000, dtype=np.float32), sample_rate=16000) == "hello world"
 

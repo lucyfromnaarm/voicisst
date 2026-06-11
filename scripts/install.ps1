@@ -1,6 +1,6 @@
-# Flow installer for Windows (PowerShell 5.1+ / pwsh).
+# Voicisst installer for Windows (PowerShell 5.1+ / pwsh).
 #
-# Installs flow-dictation[local,server] as an isolated CLI tool using uv
+# Installs voicisst[local,server] as an isolated CLI tool using uv
 # (preferred) or pipx (installed via pip --user as a fallback). Tries PyPI
 # first; if the package is not published there yet, installs straight from
 # the git repository.
@@ -10,10 +10,10 @@
 
 $ErrorActionPreference = 'Stop'
 
-$RepoUrl = 'https://github.com/lucyfromnaarm/flow-dictation'
+$RepoUrl = 'https://github.com/lucyfromnaarm/voicisst'
 $Extras = 'local,server'
-$PypiSpec = "flow-dictation[$Extras]"
-$GitSpec = "flow-dictation[$Extras] @ git+$RepoUrl"
+$PypiSpec = "voicisst[$Extras]"
+$GitSpec = "voicisst[$Extras] @ git+$RepoUrl"
 
 function Write-Step([string]$Message) { Write-Host "==> $Message" -ForegroundColor Cyan }
 function Write-Warning2([string]$Message) { Write-Host "!!  $Message" -ForegroundColor Yellow }
@@ -28,7 +28,7 @@ if (-not $python) {
 }
 & python -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)"
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning2 'Flow needs Python 3.10 or newer. Upgrade, e.g.: winget install Python.Python.3.12'
+    Write-Warning2 'Voicisst needs Python 3.10 or newer. Upgrade, e.g.: winget install Python.Python.3.12'
     exit 1
 }
 
@@ -77,39 +77,39 @@ if (-not (Install-Spec $PypiSpec)) {
 
 # --- 4. next steps --------------------------------------------------------------
 Write-Host ''
-Write-Step 'Flow is installed. Next steps:'
+Write-Step 'Voicisst is installed. Next steps:'
 Write-Host @'
   1. Open a NEW terminal so the install directory is on PATH.
      (uv: %USERPROFILE%\.local\bin; pipx: shown by `pipx environment`.
-      If `flow` is not found, also check your Python user Scripts dir,
+      If `voicisst` is not found, also check your Python user Scripts dir,
       e.g. %APPDATA%\Python\Python312\Scripts.)
-  2. flow config init     # write a documented config file
-  3. flow selftest        # check mic, hotkeys, whisper, polish, injection
-  4. flow run             # hold the hotkey (right Ctrl), speak, release
+  2. voicisst config init     # write a documented config file
+  3. voicisst selftest        # check mic, hotkeys, whisper, polish, injection
+  4. voicisst run             # hold the hotkey (right Ctrl), speak, release
 
 For LLM polish, install Ollama (https://ollama.com) and pull a model, or
 point [polish] at any OpenAI-compatible server in the config.
 '@
 
 # --- 5. optional: start at login (shell:startup shortcut) -----------------------
-$answer = Read-Host 'Start Flow automatically at login (create a Startup shortcut)? [y/N]'
+$answer = Read-Host 'Start Voicisst automatically at login (create a Startup shortcut)? [y/N]'
 if ($answer -match '^[Yy]') {
-    $flowCmd = Get-Command flow -ErrorAction SilentlyContinue
+    $flowCmd = Get-Command voicisst -ErrorAction SilentlyContinue
     if (-not $flowCmd) {
-        Write-Warning2 '`flow` is not on PATH yet in this session. Open a new terminal and create'
-        Write-Warning2 'the shortcut by hand: Win+R -> shell:startup -> New shortcut -> "flow run".'
+        Write-Warning2 '`voicisst` is not on PATH yet in this session. Open a new terminal and create'
+        Write-Warning2 'the shortcut by hand: Win+R -> shell:startup -> New shortcut -> "voicisst run".'
     } else {
         $startupDir = [Environment]::GetFolderPath('Startup')
-        $shortcutPath = Join-Path $startupDir 'Flow Dictation.lnk'
+        $shortcutPath = Join-Path $startupDir 'Voicisst Dictation.lnk'
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($shortcutPath)
         $shortcut.TargetPath = $flowCmd.Source
         $shortcut.Arguments = 'run'
-        $shortcut.Description = 'Flow voice dictation'
+        $shortcut.Description = 'Voicisst voice dictation'
         $shortcut.WindowStyle = 7  # start minimized
         $shortcut.Save()
         Write-Step "Created $shortcutPath"
     }
 } else {
-    Write-Step 'Skipped. Create one later: Win+R -> shell:startup -> New shortcut -> "flow run".'
+    Write-Step 'Skipped. Create one later: Win+R -> shell:startup -> New shortcut -> "voicisst run".'
 }
