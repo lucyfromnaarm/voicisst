@@ -227,9 +227,10 @@ def test_copy_windows_ctypes_set_failure_frees_handle(monkeypatch):
 
 
 def test_copy_windows_powershell_fallback_uses_encoded_command_and_env(monkeypatch):
-    # Real (POSIX) ctypes has no WinDLL -> the ctypes path fails and the
-    # PowerShell fallback runs.
+    # Force the ctypes path to fail so the PowerShell fallback runs — on
+    # real Windows the genuine ctypes path would succeed before it.
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(clipboard, "_copy_windows_ctypes", lambda text: False)
     monkeypatch.setattr(clipboard.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
     monkeypatch.setenv("VOICISST_TEST_SENTINEL", "kept")
     rec = RunRecorder()
@@ -255,6 +256,7 @@ def test_copy_windows_powershell_creationflags_zero_without_attr(monkeypatch):
     # On platforms whose subprocess lacks CREATE_NO_WINDOW the flag must
     # degrade to 0 (so the code path stays testable/importable everywhere).
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(clipboard, "_copy_windows_ctypes", lambda text: False)
     monkeypatch.delattr(clipboard.subprocess, "CREATE_NO_WINDOW", raising=False)
     rec = RunRecorder()
     monkeypatch.setattr(clipboard.shutil, "which", which_factory("pwsh"))
@@ -267,6 +269,7 @@ def test_copy_windows_powershell_creationflags_zero_without_attr(monkeypatch):
 
 def test_copy_windows_no_powershell(monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(clipboard, "_copy_windows_ctypes", lambda text: False)
     monkeypatch.setattr(clipboard.shutil, "which", which_factory())
     monkeypatch.setattr(clipboard.subprocess, "run", RunRecorder())
     assert clipboard.copy("hi") is False

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-import socket
+import os
+import stat as stat_mod
 import sys
 import types
 from pathlib import Path
@@ -190,10 +191,19 @@ def test_ydotool_failure_returns_false(monkeypatch):
 def test_ydotool_available_needs_binary_and_socket(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(ydo_mod.sys, "platform", "linux")
     monkeypatch.setattr(ydo_mod.shutil, "which", which_factory("ydotool"))
+    # Fake the socket inodes via os.stat: real AF_UNIX sockets don't exist
+    # on Windows CI and exceed the 104-char path limit on macOS runners.
     sock_path = tmp_path / "ydo.sock"
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.bind(str(sock_path))
-    s.close()  # the filesystem socket inode persists
+    rt_sock = tmp_path / ".ydotool_socket"
+    fake_sockets = {str(sock_path), str(rt_sock)}
+    real_stat = os.stat
+
+    def stat_with_fake_sockets(path, *args, **kwargs):
+        if str(path) in fake_sockets:
+            return SimpleNamespace(st_mode=stat_mod.S_IFSOCK | 0o600)
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(ydo_mod.os, "stat", stat_with_fake_sockets)
     monkeypatch.setenv("YDOTOOL_SOCKET", str(sock_path))
     assert YdotoolInjector.available() is True
 
@@ -201,16 +211,13 @@ def test_ydotool_available_needs_binary_and_socket(monkeypatch, tmp_path: Path):
     plain = tmp_path / "not-a-socket"
     plain.write_text("x")
     monkeypatch.setenv("YDOTOOL_SOCKET", str(plain))
-    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "empty-runtime"))
     monkeypatch.setattr(ydo_mod, "_FALLBACK_SOCKET", str(tmp_path / "missing"))
     assert YdotoolInjector.available() is False
 
     # XDG_RUNTIME_DIR candidate works too
     monkeypatch.delenv("YDOTOOL_SOCKET", raising=False)
-    rt_sock = tmp_path / ".ydotool_socket"
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.bind(str(rt_sock))
-    s.close()
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
     assert YdotoolInjector.available() is True
 
     # no binary -> unavailable regardless of socket
@@ -729,8 +736,13 @@ def test_windowinfo_darwin(monkeypatch):
 
 
 def test_windowinfo_win32_best_effort_none(monkeypatch):
-    # On a POSIX test box ctypes has no windll: must degrade to None.
+    # When ctypes has no usable windll (any POSIX box, or a broken Windows
+    # environment) the win32 path must degrade to None. On real Windows the
+    # genuine windll would succeed, so neuter it explicitly.
+    import ctypes
+
     monkeypatch.setattr(wi.sys, "platform", "win32")
+    monkeypatch.setattr(ctypes, "windll", None, raising=False)
     assert wi.focused_window_class() is None
 
 

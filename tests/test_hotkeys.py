@@ -480,7 +480,9 @@ def test_pynput_key_name_resolution_table(fake_pynput):
         assert resolve_key_name(name) == expected, name
 
 
-def test_pynput_resolve_warns_and_keeps_valid_keys(fake_pynput, capsys):
+def test_pynput_resolve_warns_and_keeps_valid_keys(fake_pynput, capsys, monkeypatch):
+    # Pin to linux: on real win32 resolution adds the Key.alt_gr companion.
+    monkeypatch.setattr(sys, "platform", "linux")
     calls = Calls()
     listener = PynputListener(
         ["KEY_BANANAPHONE", "alt_r"], calls.on_press, calls.on_release

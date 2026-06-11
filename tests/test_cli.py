@@ -590,6 +590,9 @@ def test_selftest_hotkey_passes_when_device_exposes_key(
 def test_selftest_hotkey_permission_error_mentions_input_group(
     selftest_env, monkeypatch, tmp_path, capsys
 ):
+    # Pin to linux: hotkey defaults and the evdev availability gate read
+    # sys.platform, so on mac/win the input-group path is never reached.
+    monkeypatch.setattr(sys, "platform", "linux")
     mod = fake_evdev_module([_EVDEV_CODES["KEY_COMPOSE"]])
 
     def denied():
