@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import os
+import socket
 import sys
 import threading
 import time
 import types
-from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -639,10 +639,11 @@ def install_fake_evdev(monkeypatch: pytest.MonkeyPatch, devices: list) -> None:
 
 
 def test_capture_evdev_returns_first_key_down(monkeypatch: pytest.MonkeyPatch) -> None:
-    r_fd, w_fd = os.pipe()
+    # socketpair, not os.pipe: Windows select() only accepts sockets.
+    rsock, wsock = socket.socketpair()
     try:
         dev = FakeEvdevDevice(
-            r_fd,
+            rsock.fileno(),
             events=[
                 _key_event(0, 1, etype=0),  # not EV_KEY: ignored
                 _key_event(59, 0),  # key up: ignored
@@ -650,44 +651,41 @@ def test_capture_evdev_returns_first_key_down(monkeypatch: pytest.MonkeyPatch) -
             ],
         )
         install_fake_evdev(monkeypatch, [dev])
-        os.write(w_fd, b"x")  # make the fd readable for select()
+        wsock.send(b"x")  # make the fd readable for select()
         assert ui_server._capture_evdev(1.0) == "KEY_F2"
         assert dev.closed  # devices ALWAYS released
     finally:
-        os.close(w_fd)
-        with suppress(OSError):
-            os.close(r_fd)
+        wsock.close()
+        rsock.close()
 
 
 def test_capture_evdev_times_out_and_closes(monkeypatch: pytest.MonkeyPatch) -> None:
-    r_fd, w_fd = os.pipe()
+    rsock, wsock = socket.socketpair()
     try:
-        dev = FakeEvdevDevice(r_fd)
+        dev = FakeEvdevDevice(rsock.fileno())
         install_fake_evdev(monkeypatch, [dev])
         with pytest.raises(TimeoutError):
             ui_server._capture_evdev(0.15)
         assert dev.closed
     finally:
-        os.close(w_fd)
-        with suppress(OSError):
-            os.close(r_fd)
+        wsock.close()
+        rsock.close()
 
 
 def test_capture_evdev_skips_ydotool_and_errors_helpfully(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    r_fd, w_fd = os.pipe()
+    rsock, wsock = socket.socketpair()
     try:
-        dev = FakeEvdevDevice(r_fd, name="ydotoold virtual device")
+        dev = FakeEvdevDevice(rsock.fileno(), name="ydotoold virtual device")
         install_fake_evdev(monkeypatch, [dev])
         with pytest.raises(EngineError) as ei:
             ui_server._capture_evdev(0.2)
         assert "input" in ei.value.hint
         assert dev.closed
     finally:
-        os.close(w_fd)
-        with suppress(OSError):
-            os.close(r_fd)
+        wsock.close()
+        rsock.close()
 
 
 # ---------------------------------------------------------------------------
