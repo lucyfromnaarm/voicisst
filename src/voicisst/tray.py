@@ -80,6 +80,13 @@ def _state_images() -> dict[str, Any]:
     return {state: _draw_state_icon(state) for state in events.ALL_STATES}
 
 
+def _latin1_safe(text: str) -> str:
+    """pystray's X11 backend encodes titles/tooltips as latin-1; replace
+    anything outside it (em-dashes, emoji in transcript details) instead
+    of letting the encode error kill the update."""
+    return text.encode("latin-1", "replace").decode("latin-1")
+
+
 def run_tray(
     app: DictationApp,
     cfg: Config,
@@ -105,7 +112,7 @@ def run_tray(
 
     def status(_item: Any) -> str:
         target = cfg.engine.server_url if cfg.engine.mode == "remote" else cfg.whisper.model
-        return f"Voicisst — {cfg.engine.mode} / {target} ({cfg.hotkey.mode})"
+        return _latin1_safe(f"Voicisst — {cfg.engine.mode} / {target} ({cfg.hotkey.mode})")
 
     def toggle_polish(_icon: Any, _item: Any) -> None:
         cfg.polish.enabled = not cfg.polish.enabled
@@ -146,7 +153,7 @@ def run_tray(
                 title = f"Voicisst — {event.state}"
                 if event.detail:
                     title = f"{title}: {event.detail}"
-                icon.title = title
+                icon.title = _latin1_safe(title)
             except Exception as e:
                 print(f"voicisst tray: icon update failed: {e}", file=sys.stderr)
 

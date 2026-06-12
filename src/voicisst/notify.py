@@ -14,6 +14,10 @@ import sys
 
 # Desktop bubbles auto-expire (GNOME stacked them indefinitely otherwise).
 _EXPIRE_MS = 3000
+# Fixed notification ID: each bubble REPLACES the previous one, so rapid
+# events (rejected takes, repeated errors) never pile up into a wall of
+# notifications — there is at most one Voicisst bubble at any time.
+_REPLACE_ID = "812731"
 _VALID_URGENCIES = ("low", "normal", "critical")
 
 # Windows toasts are silently dropped unless CreateToastNotifier is given a
@@ -58,6 +62,8 @@ def _notify_linux(summary: str, body: str, urgency: str) -> None:
         [
             "notify-send",
             "--app-name=Voicisst",
+            "-r",
+            _REPLACE_ID,
             "-u",
             urgency,
             "-t",

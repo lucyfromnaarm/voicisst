@@ -63,6 +63,24 @@ def test_linux_uses_notify_send_with_timeout(
     assert kwargs["stderr"] is subprocess.DEVNULL
 
 
+def test_linux_reuses_one_notification_slot(
+    popen: PopenRecorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every bubble carries the same replace-id, so a burst of events
+    (rejected takes, repeated errors) updates ONE notification instead of
+    stacking a new bubble per event."""
+    monkeypatch.setattr(sys, "platform", "linux")
+    notify_mod.notify("first", "a")
+    notify_mod.notify("second", "b", urgency="critical")
+    ids = []
+    for cmd, _kwargs in popen.calls:
+        i = cmd.index("-r")
+        ids.append(cmd[i + 1])
+    assert len(ids) == 2
+    assert ids[0] == ids[1]
+    assert int(ids[0]) > 0  # notify-send wants a positive uint32
+
+
 def test_unknown_urgency_becomes_normal(
     popen: PopenRecorder, monkeypatch: pytest.MonkeyPatch
 ) -> None:

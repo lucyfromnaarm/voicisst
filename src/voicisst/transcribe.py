@@ -20,6 +20,31 @@ WHISPER_SAMPLE_RATE = 16000
 _VOCAB_MAX_CHARS = 800
 
 
+def _preload_nvidia_libs() -> None:
+    """Map CUDA runtime libs from pip's `nvidia-*-cu12` wheels into the process.
+
+    ctranslate2 dlopens libcublas/libcudnn by soname, but the wheels install
+    them outside the dynamic loader's search path — dlopen only finds them
+    if they are already loaded. Missing wheels or unloadable libs are fine:
+    the system loader may still find them, and the model load reports the
+    failure if not.
+    """
+    import ctypes
+    import glob
+    import os
+
+    try:
+        import nvidia
+    except ImportError:
+        return
+    for base in nvidia.__path__:
+        for lib in sorted(glob.glob(os.path.join(base, "*", "lib", "*.so*"))):
+            try:
+                ctypes.CDLL(lib, mode=ctypes.RTLD_GLOBAL)
+            except OSError:
+                pass
+
+
 def _pick_device(cfg: WhisperConfig) -> tuple[str, str]:
     """Return (device, compute_type) for faster-whisper.
 
@@ -52,6 +77,8 @@ class Transcriber:
     def __init__(self, cfg: WhisperConfig) -> None:
         self.cfg = cfg
         device, compute = _pick_device(cfg)
+        if device == "cuda":
+            _preload_nvidia_libs()
         self.device = device
         self.compute = compute
         self.model_name = cfg.resolved_model(device)
