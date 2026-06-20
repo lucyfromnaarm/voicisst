@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Dictation overlay**: a small dark pill at the bottom of the screen while
+  you dictate — a live waveform that moves with your voice, with the mic's
+  name shown for the first couple of seconds. Transcribing, polishing and
+  "delivered" each get their own motion and color (never color alone). Built
+  on stdlib tkinter, so it needs no extra; on by default (`[ui] overlay`,
+  `--no-overlay`, or the Settings page turn it off). It never takes focus,
+  pins to the primary monitor on multi-screen setups, and quietly steps
+  aside on machines where it can't run (headless, macOS for now).
 - **LM Studio backend** (`polish.backend = "lmstudio"`): polish through LM
   Studio's built-in local server. Picking it is enough — if `polish.url` is
   still the Ollama default, Voicisst uses LM Studio's `http://localhost:1234`
@@ -16,9 +24,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wizard now list the models already installed on your backend (Ollama or
   LM Studio), fetched from a new local `/api/polish/models` endpoint. You
   can still type any model name.
+- **Audio file transcription**: `voicisst transcribe-file` and the web UI's
+  Files page turn recordings into cleaned-up text. Long files are chunked
+  before transcription, and M4A/AAC works through PyAV or `ffmpeg`.
 
 ### Changed
 
+- The tray icon now mirrors the live dictation state whenever the overlay
+  or the web UI is on (previously only with `--ui`).
 - **Shorter settings page**: each section now shows only the settings most
   people touch; the rest sit behind a closed "More options" disclosure. The
   polish API key field only appears for the `openai` backend.

@@ -2,12 +2,13 @@
 
 Voicisst's UI is a small web app that Voicisst serves itself, on your own
 machine, in your normal browser. No Electron, no Node, no build step — just
-a settings page with three jobs:
+a settings page with four jobs:
 
 - a **setup wizard** that gets you from "just installed" to dictating,
 - a **settings editor** so you never have to hand-edit TOML (unless you
   want to — there's a raw editor too),
-- a **live dashboard** that shows what dictation is doing right now.
+- a **live dashboard** that shows what dictation is doing right now,
+- a **Files** page that transcribes uploaded recordings into cleaned-up text.
 
 It needs the `ui` extra. The install scripts include it; if you installed
 by hand, add it:
@@ -186,6 +187,19 @@ filled red circle (listening), half-filled amber circle (transcribing),
 violet diamond (polishing), green check (delivering), white X on a black
 disc (error) — so the tray stays readable in monochrome themes and without
 color vision. The tray menu also gets an "Open settings UI" item.
+
+## Files
+
+The Files page turns an existing recording into text. Pick an audio file,
+leave language blank for auto-detect, choose whether to run polish, then
+press **Transcribe file**. Progress is shown as the file is decoded,
+transcribed in chunks, and polished. The result can be copied or downloaded
+as Markdown, and the raw transcript is available in a disclosure below it.
+
+Long recordings are chunked before they reach Whisper, so they do not hit
+the short-dictation server caps. M4A/AAC files work when PyAV is installed
+(`pip install "voicisst[media]"`) or `ffmpeg` is available on `PATH`; WAV
+also works without either.
 
 ## Troubleshooting
 

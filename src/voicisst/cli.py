@@ -19,6 +19,7 @@ from . import __version__
 from . import config as config_mod
 from .dictation import DictationApp
 from .engine import EngineError, get_engine
+from .overlay import run_overlay
 
 # exists=True: a typo'd --config must error (exit 2), not silently fall back
 # to defaults — load_config tolerates a missing *default* path by design.
@@ -85,6 +86,12 @@ def cli(ctx: click.Context) -> None:
 @_CONFIG_OPTION
 @click.option("--tray", is_flag=True, help="Show a system-tray icon (needs the tray extra).")
 @click.option(
+    "--overlay/--no-overlay",
+    "overlay",
+    default=None,
+    help="Show the on-screen waveform pill while dictating (default: on).",
+)
+@click.option(
     "--ui",
     "with_ui",
     is_flag=True,
@@ -98,6 +105,7 @@ def run(
     language: str | None,
     config_file: Path | None,
     tray: bool,
+    overlay: bool | None,
     with_ui: bool,
 ) -> None:
     """Run dictation (the default command)."""
@@ -115,18 +123,22 @@ def run(
         overrides["whisper.language"] = language
     if tray:
         overrides["ui.tray"] = True
+    if overlay is not None:
+        overrides["ui.overlay"] = overlay
     cfg = config_mod.load_config(path=config_file, overrides=overrides)
     engine = get_engine(cfg)
 
+    # One StateBus shared by the dictation app, the overlay, the web
+    # dashboard and the tray: everyone sees the same live state.
     bus = None
-    ui_url: str | None = None
-    if with_ui:
-        # One StateBus shared by the dictation app, the web dashboard and
-        # the tray: everyone sees the same live state.
+    if with_ui or cfg.ui.overlay:
         from .events import StateBus
 
-        serve_ui = _load_serve_ui()
         bus = StateBus()
+
+    ui_url: str | None = None
+    if with_ui:
+        serve_ui = _load_serve_ui()
         # serve_ui generates the per-run token and prints/open()s the full
         # tokened URL itself; the tray gets the base URL — the browser's
         # cookie from that first launch authorizes it.
@@ -142,14 +154,28 @@ def run(
         ).start()
 
     app = DictationApp(cfg, engine, bus=bus)
+    if cfg.ui.overlay:
+        # The overlay owns its Tk loop on a daemon thread and dies with the
+        # bus's STOPPED event; failures inside are one stderr line.
+        threading.Thread(
+            target=run_overlay,
+            args=(cfg, bus),
+            kwargs={"level_source": app.audio_level},
+            name="voicisst-overlay",
+            daemon=True,
+        ).start()
     if not cfg.ui.tray:
         app.run()
         return
     from .tray import run_tray
 
-    # Only pass the new tray params when the UI is on, so a plain
-    # `voicisst run --tray` keeps its exact pre-UI call shape.
-    tray_kwargs: dict[str, object] = {"bus": bus, "ui_url": ui_url} if with_ui else {}
+    # The tray mirrors live state whenever a bus exists (overlay or --ui);
+    # the settings-UI link only exists when the UI is actually served.
+    tray_kwargs: dict[str, object] = {}
+    if bus is not None:
+        tray_kwargs["bus"] = bus
+    if with_ui:
+        tray_kwargs["ui_url"] = ui_url
     if sys.platform == "darwin":
         # pystray's AppKit backend must own the MAIN thread on macOS, so the
         # arrangement is inverted there: dictation runs in a background thread
@@ -191,6 +217,117 @@ def serve(
     from . import server as server_mod
 
     server_mod.serve(cfg)
+
+
+@cli.command("transcribe-file")
+@click.argument(
+    "audio_file",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--output",
+    "output_file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    metavar="PATH",
+    help="Write cleaned text to PATH instead of stdout.",
+)
+@click.option(
+    "--raw-output",
+    "raw_output_file",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    metavar="PATH",
+    help="Also write the raw transcript to PATH.",
+)
+@click.option(
+    "--server",
+    "server_url",
+    default=None,
+    metavar="URL",
+    help="Use a remote `voicisst serve` instance.",
+)
+@click.option("--token", default=None, help="Bearer token for the remote server.")
+@click.option(
+    "--language",
+    default=None,
+    metavar="LANG",
+    help='Force a language ("en", "es", ...); default follows config.',
+)
+@click.option(
+    "--no-polish",
+    "no_polish",
+    is_flag=True,
+    help="Skip LLM cleanup and output the raw transcript.",
+)
+@click.option(
+    "--chunk-seconds",
+    type=float,
+    default=None,
+    metavar="N",
+    help="Seconds of audio per transcription chunk (default 120).",
+)
+@_CONFIG_OPTION
+def transcribe_file(
+    audio_file: Path,
+    output_file: Path | None,
+    raw_output_file: Path | None,
+    server_url: str | None,
+    token: str | None,
+    language: str | None,
+    no_polish: bool,
+    chunk_seconds: float | None,
+    config_file: Path | None,
+) -> None:
+    """Transcribe an audio file, including long M4A recordings."""
+    overrides: dict[str, object] = {}
+    if server_url:
+        overrides["engine.mode"] = "remote"
+        overrides["engine.server_url"] = server_url
+    if token is not None:
+        overrides["engine.token"] = token
+    if language:
+        overrides["whisper.language"] = language
+    cfg = config_mod.load_config(path=config_file, overrides=overrides)
+    engine = get_engine(cfg)
+    try:
+        from .files import clamp_chunk_seconds, process_audio_file
+
+        chunk_s = clamp_chunk_seconds(chunk_seconds)
+
+        def progress(event: dict[str, object]) -> None:
+            status = str(event.get("status", ""))
+            if status == "transcribing":
+                chunk = int(event.get("chunk", 0) or 0)
+                seconds = float(event.get("seconds", 0.0) or 0.0)
+                print(
+                    f"voicisst: transcribing chunk {chunk} ({seconds:.0f}s decoded)",
+                    file=sys.stderr,
+                )
+            elif status == "polishing":
+                print("voicisst: polishing transcript", file=sys.stderr)
+
+        result = process_audio_file(
+            audio_file,
+            cfg,
+            engine,
+            language=cfg.whisper.language_or_none(),
+            polish=not no_polish,
+            chunk_seconds=chunk_s,
+            progress=progress,
+        )
+    finally:
+        engine.close()
+    if output_file is None:
+        click.echo(result.text)
+    else:
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(result.text + ("\n" if result.text else ""), encoding="utf-8")
+        click.echo(f"wrote {output_file}", err=True)
+    if raw_output_file is not None:
+        raw_output_file.parent.mkdir(parents=True, exist_ok=True)
+        raw_output_file.write_text(result.raw + ("\n" if result.raw else ""), encoding="utf-8")
+        click.echo(f"wrote raw transcript to {raw_output_file}", err=True)
 
 
 @cli.command("ui")

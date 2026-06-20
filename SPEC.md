@@ -60,6 +60,7 @@ src/voicisst/
   cli.py                    click CLI (voicisst run/serve/selftest/config)
   selftest.py               environment diagnostics
   tray.py                   optional pystray tray icon
+  overlay.py                on-screen waveform pill (stdlib tkinter)
 tests/                      pytest; NO hardware/network/GPU at test time
 .github/workflows/          ci.yml (lint+test matrix), release.yml (binaries)
 packaging/                  pyinstaller spec, systemd units, launchd plist, etc.
@@ -188,6 +189,29 @@ Server must run blocking engine calls in a threadpool (`run_in_executor` /
 `fastapi.concurrency.run_in_threadpool`). Warn loudly at startup if host is
 non-loopback and token is empty.
 
+## Audio files (files.py + UI)
+
+`files.py` is the batch pipeline for recordings. It decodes media to mono
+float32 at 16 kHz, yields bounded chunks (default 120 s), applies the same
+normalization option as dictation, transcribes each chunk through the active
+Engine, then polishes the joined raw transcript once. It returns raw text,
+cleaned text, duration, chunk count, and sample rate.
+
+M4A/AAC and other media containers decode through PyAV when installed, with
+`ffmpeg` CLI as a fallback. WAV has a stdlib fallback via `protocol.decode_wav`.
+Remote mode is still safe: long files are chunked client-side before hitting
+the existing `/v1/transcribe` body cap.
+
+The local UI exposes token-guarded upload jobs:
+
+```
+POST /api/files/jobs?polish=true&language=&chunk_seconds=120
+     body: raw file bytes, header X-Voicisst-Filename
+     -> {"id","status":"queued"}
+GET  /api/files/jobs/{id}
+     -> {"status","detail","chunk","seconds","result"|null,"error","hint"}
+```
+
 ## transcribe.py
 
 ```python
@@ -203,8 +227,11 @@ auto-detect. `vocab` → `initial_prompt`. beam_size/vad from cfg.
 
 Port the prototype's `POLISH_SYSTEM_PROMPT` **verbatim including all
 examples**, then append:
-- a multilingual rule: "Always respond in the same language as the input.
+- a multilingual rule: "Keep the output in the same language as the input.
   The rules above apply in every language."
+- an editor-not-responder rule: preserve the speaker's intended meaning and
+  stance; never answer, argue with, lecture, moralise, or explain why the
+  content is right or wrong.
 - a dictionary hook: when vocab words present, append
   "Preferred spellings (use these exactly): <words>".
 
@@ -352,8 +379,11 @@ Behavior (port prototype worker_loop + run_loop, generalized):
 
 click group `voicisst`; invoking bare `voicisst` == `voicisst run`.
 - `voicisst run [--server URL] [--token T] [--stream/--no-stream] [--toggle]
-  [--language L] [--config PATH] [--tray]`
+  [--language L] [--config PATH] [--tray] [--overlay/--no-overlay]`
 - `voicisst serve [--host H] [--port P] [--token T] [--config PATH]`
+- `voicisst transcribe-file PATH [--output PATH] [--raw-output PATH]
+  [--server URL] [--token T] [--language L] [--no-polish]
+  [--chunk-seconds N] [--config PATH]`
 - `voicisst selftest [--server URL]`
 - `voicisst config init|show|path`
 - `voicisst version`
@@ -372,6 +402,19 @@ Steps print PASS/FAIL/SKIP; exit code 0/1. Must degrade gracefully headless.
 `run_tray(app: DictationApp, cfg) -> None` — optional pystray icon
 (generated PIL circle), menu: status, toggle polish, quit. ImportError →
 notify "tray extra not installed: pip install voicisst[tray]".
+
+## overlay.py
+
+`run_overlay(cfg, bus, level_source) -> None` — on-screen dictation pill
+(stdlib tkinter, no extra) at the bottom-center of the primary monitor:
+a waveform driven by `DictationApp.audio_level()` plus a "Using <mic>"
+caption for the first ~2.5 s. Each state gets distinct motion AND color
+(never color alone): live bars / amber sweep / violet breathing / green
+flash. On by default (`[ui] overlay`, `--no-overlay` to disable). Must
+never steal focus (override-redirect; XWayland under Wayland) and must
+degrade to a single stderr line headless and on macOS (Tk needs the main
+thread there). All state/animation math lives in the Tk-free
+OverlayModel so tests stay headless.
 
 ## Packaging & CI
 

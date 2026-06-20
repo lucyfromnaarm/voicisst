@@ -16,6 +16,7 @@
     <nav aria-label="Main">
       <ul>
         <li><a href="#dashboard">Dashboard</a></li>
+        <li><a href="#files">Files</a></li>
         <li><a href="#setup">Setup</a></li>
         <li><a href="#settings">Settings</a></li>
         <li><a href="#help">Help</a></li>
@@ -51,6 +52,55 @@
         <p id="health-note" class="help">Not checked yet. The first check can
         take a little while if the model has to load.</p>
         <button type="button" id="health-refresh">Check engine</button>
+      </section>
+    </section>
+
+    <!-- ================= Files ================= -->
+    <section id="files" aria-labelledby="files-title" hidden>
+      <h1 id="files-title">Files</h1>
+
+      <section class="card" aria-labelledby="file-upload-title">
+        <h2 id="file-upload-title">Transcribe audio</h2>
+        <div class="row">
+          <label for="file-audio">Audio file</label>
+          <input type="file" id="file-audio" accept="audio/*,.m4a,.mp4,.aac,.wav,.flac,.aiff,.aif">
+        </div>
+        <div class="row">
+          <label for="file-language">Language</label>
+          <input type="text" id="file-language" autocomplete="off" spellcheck="false"
+            placeholder="auto">
+        </div>
+        <div class="row">
+          <label for="file-chunk-seconds">Chunk length (seconds)</label>
+          <input type="number" id="file-chunk-seconds" min="1" max="600" step="1" value="120">
+        </div>
+        <div class="choice">
+          <input type="checkbox" id="file-polish" checked>
+          <label for="file-polish">Clean up the transcript</label>
+        </div>
+        <div class="btn-row">
+          <button type="button" id="file-start">Transcribe file</button>
+        </div>
+        <p id="file-status" class="status" role="status" aria-live="polite"></p>
+      </section>
+
+      <section class="card" aria-labelledby="file-result-title">
+        <h2 id="file-result-title">Result</h2>
+        <div class="row">
+          <label for="file-result">Cleaned text</label>
+          <textarea id="file-result" rows="14" spellcheck="true"></textarea>
+        </div>
+        <div class="btn-row">
+          <button type="button" id="file-copy" disabled>Copy</button>
+          <button type="button" id="file-download" disabled>Download Markdown</button>
+        </div>
+        <details class="raw-details">
+          <summary>Raw transcript</summary>
+          <div class="row">
+            <label for="file-raw">Raw text</label>
+            <textarea id="file-raw" rows="10" spellcheck="true"></textarea>
+          </div>
+        </details>
       </section>
     </section>
 

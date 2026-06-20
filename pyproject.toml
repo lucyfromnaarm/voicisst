@@ -41,9 +41,10 @@ dependencies = [
 [project.optional-dependencies]
 local = ["faster-whisper>=1.0"]
 server = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "faster-whisper>=1.0"]
+media = ["av>=12.0"]
 tray = ["pystray>=0.19", "Pillow>=10.0"]
 ui = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "tomlkit>=0.12"]
-all = ["voicisst[local,server,tray,ui]"]
+all = ["voicisst[local,server,media,tray,ui]"]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",

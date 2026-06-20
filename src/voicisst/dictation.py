@@ -722,6 +722,24 @@ class DictationApp:
 
     # -- small helpers ---------------------------------------------------------------
 
+    def audio_level(self) -> float:
+        """RMS of the most recently captured chunk; 0.0 when not recording.
+
+        Read-only tap for the overlay's waveform. Recorder.chunks is a
+        live append-only list (the same contract the silence watchdog
+        polls), so peeking at the last chunk from another thread is safe.
+        """
+        rec = self._recorder
+        if rec is None or not rec.is_active():
+            return 0.0
+        chunks = rec.chunks
+        if not chunks:
+            return 0.0
+        try:
+            return audio_mod.rms(chunks[-1])
+        except Exception:
+            return 0.0
+
     def _language(self) -> str | None:
         return self.cfg.whisper.language_or_none()
 

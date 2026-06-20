@@ -134,6 +134,7 @@ class ServerConfig:
 class UIConfig:
     beep: bool = True
     notify: bool = True
+    overlay: bool = True  # on-screen waveform pill while dictating
     tray: bool = False
     web_port: int = 8766  # the local web dashboard/settings UI
     open_browser: bool = True  # auto-open the UI when it starts
@@ -391,6 +392,7 @@ token = ""
 [ui]
 beep = true
 notify = true
+overlay = true            # on-screen waveform pill while dictating
 web_port = 8766           # voicisst ui / voicisst run --ui (localhost only)
 open_browser = true
 

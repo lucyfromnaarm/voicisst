@@ -188,6 +188,7 @@ Settings for `voicisst serve`. See [SERVER.md](SERVER.md).
 |---|---|---|
 | `beep` | `true` | Short tones on start/stop/cancel/error. |
 | `notify` | `true` | Desktop notifications (always also logged to stderr). |
+| `overlay` | `true` | On-screen waveform pill while dictating: it moves with your voice and names the mic for the first couple of seconds; transcribing, polishing and "delivered" each get their own motion and color. No extra needed (stdlib tkinter); silently skipped where it can't run (headless, macOS for now). `--no-overlay` disables it for one run. |
 | `tray` | `false` | Tray icon; needs the extra: `pip install "voicisst[tray]"`. |
 | `web_port` | `8766` | Port for the local web UI (`voicisst ui` / `voicisst run --ui`). The UI always binds to `127.0.0.1` only — this sets just the port. Change it if something else already uses 8766. See [UI.md](UI.md). |
 | `open_browser` | `true` | Open the UI in your default browser when it starts. Set to `false` (or pass `--no-browser`) to only print the URL. |

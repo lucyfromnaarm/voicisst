@@ -101,10 +101,10 @@ def test_landmarks_views_and_live_regions(audit: MarkupAudit) -> None:
     assert {"header", "nav", "main"} <= audit.tags
     # Grouped controls use fieldset/legend.
     assert {"fieldset", "legend"} <= audit.tags
-    # The four hash-routed views plus the wizard root exist by id.
-    assert {"dashboard", "setup", "settings", "help", "wizard", "wizard-progress"} <= audit.ids
+    # The hash-routed views plus the wizard root exist by id.
+    assert {"dashboard", "files", "setup", "settings", "help", "wizard", "wizard-progress"} <= audit.ids
     # The nav links to every view.
-    for view in ("#dashboard", "#setup", "#settings", "#help"):
+    for view in ("#dashboard", "#files", "#setup", "#settings", "#help"):
         assert view in audit.hrefs
     # Polite live regions announce state changes and save results.
     assert "polite" in audit.aria_live
@@ -130,7 +130,7 @@ def test_single_es_module_and_state_hero_present(audit: MarkupAudit) -> None:
     assert INDEX.count("<script") == 1  # exactly one script: app.js
     # The dashboard hero: state circle + textual state (never color-only).
     assert {"state-circle", "state-icon", "state-name", "state-detail"} <= audit.ids
-    assert {"conn-note", "save-status", "raw-toml"} <= audit.ids
+    assert {"conn-note", "file-status", "save-status", "raw-toml"} <= audit.ids
 
 
 # ---------------------------------------------------------------------------

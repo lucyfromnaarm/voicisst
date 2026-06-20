@@ -43,6 +43,7 @@ __all__ = ["create_ui_app", "serve_ui"]
 _INSTALL_HINT = "install the ui extra: pip install 'voicisst[ui]'"
 COOKIE_NAME = "voicisst_ui"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+MAX_FILE_UPLOAD_BYTES = 512 * 1024 * 1024
 
 # A deliberately messy sample so "Test polish" visibly cleans something up.
 _DEFAULT_POLISH_SAMPLE = (
@@ -379,7 +380,7 @@ def create_ui_app(
     """Build the UI app. `token` guards every request; "" disables auth
     (bare-test convenience — serve_ui always generates one)."""
     try:
-        from fastapi import FastAPI, HTTPException, Request, WebSocket
+        from fastapi import Body, FastAPI, HTTPException, Request, WebSocket
         from fastapi.concurrency import run_in_threadpool
         from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
         from fastapi.staticfiles import StaticFiles
@@ -462,6 +463,16 @@ def create_ui_app(
 
     warm_lock = threading.Lock()
     warm_state: dict[str, str] = {"status": "idle", "detail": ""}
+    file_jobs: dict[str, dict[str, Any]] = {}
+    file_jobs_lock = threading.Lock()
+
+    def _file_job_update(job_id: str, **values: Any) -> None:
+        with file_jobs_lock:
+            job = file_jobs.get(job_id)
+            if job is None:
+                return
+            job.update(values)
+            job["updated_at"] = time.time()
 
     # -- pages -------------------------------------------------------------------
 
@@ -764,6 +775,138 @@ def create_ui_app(
             return await run_in_threadpool(eng.health)
         except Exception as e:
             return _error_503(e)
+
+    # -- files -----------------------------------------------------------------------------
+
+    @app.post("/api/files/jobs")
+    async def file_job_create(
+        request: Request,
+        upload: bytes = Body(..., media_type="application/octet-stream"),
+    ) -> Any:
+        content_length = request.headers.get("content-length", "")
+        if content_length.isdigit() and int(content_length) > MAX_FILE_UPLOAD_BYTES:
+            return JSONResponse(
+                {
+                    "error": "audio file is too large",
+                    "hint": f"maximum upload size is {MAX_FILE_UPLOAD_BYTES // (1024 * 1024)} MiB",
+                },
+                status_code=413,
+            )
+        if not upload:
+            return JSONResponse(
+                {"error": "upload body is empty", "hint": "choose an audio file first"},
+                status_code=400,
+            )
+        if len(upload) > MAX_FILE_UPLOAD_BYTES:
+            return JSONResponse(
+                {
+                    "error": "audio file is too large",
+                    "hint": f"maximum upload size is {MAX_FILE_UPLOAD_BYTES // (1024 * 1024)} MiB",
+                },
+                status_code=413,
+            )
+
+        filename = request.headers.get("x-voicisst-filename", "audio")
+        suffix = Path(filename).suffix[:16] or ".audio"
+        fd, tmp_name = tempfile.mkstemp(prefix="voicisst-upload-", suffix=suffix)
+        with os.fdopen(fd, "wb") as f:
+            f.write(upload)
+
+        def _truthy(value: str | None, default: bool = True) -> bool:
+            if value is None:
+                return default
+            return value.strip().lower() not in ("0", "false", "no", "off")
+
+        job_id = secrets.token_urlsafe(12)
+        language = request.query_params.get("language") or None
+        polish = _truthy(request.query_params.get("polish"), True)
+        chunk_seconds = request.query_params.get("chunk_seconds")
+        with file_jobs_lock:
+            file_jobs[job_id] = {
+                "id": job_id,
+                "filename": filename,
+                "status": "queued",
+                "detail": "",
+                "chunk": 0,
+                "seconds": 0.0,
+                "result": None,
+                "error": "",
+                "hint": "",
+                "created_at": time.time(),
+                "updated_at": time.time(),
+            }
+
+        def _run() -> None:
+            tmp_path = Path(tmp_name)
+            try:
+                from ..files import clamp_chunk_seconds, process_audio_file
+
+                eng = _resolve_engine()
+                _file_job_update(job_id, status="running", detail="decoding")
+
+                def _progress(event: dict[str, Any]) -> None:
+                    status = str(event.get("status") or "running")
+                    detail = {
+                        "decoding": "decoding",
+                        "transcribing": "transcribing",
+                        "polishing": "polishing",
+                        "done": "done",
+                    }.get(status, status)
+                    _file_job_update(
+                        job_id,
+                        status="running" if status != "done" else "done",
+                        detail=detail,
+                        chunk=int(event.get("chunk", 0) or 0),
+                        seconds=float(event.get("seconds", 0.0) or 0.0),
+                    )
+
+                result = process_audio_file(
+                    tmp_path,
+                    cfg,
+                    eng,
+                    language=language,
+                    polish=polish,
+                    chunk_seconds=clamp_chunk_seconds(chunk_seconds),
+                    progress=_progress,
+                )
+                _file_job_update(
+                    job_id,
+                    status="done",
+                    detail="done",
+                    chunk=result.chunks,
+                    seconds=result.duration_s,
+                    result={
+                        "raw": result.raw,
+                        "text": result.text,
+                        "duration_s": result.duration_s,
+                        "chunks": result.chunks,
+                    },
+                )
+            except Exception as e:
+                _file_job_update(
+                    job_id,
+                    status="error",
+                    detail="error",
+                    error=str(e),
+                    hint=getattr(e, "hint", "") or "check the terminal for details",
+                )
+            finally:
+                with suppress(OSError):
+                    tmp_path.unlink()
+
+        threading.Thread(target=_run, name=f"voicisst-file-{job_id}", daemon=True).start()
+        return {"id": job_id, "status": "queued"}
+
+    @app.get("/api/files/jobs/{job_id}")
+    async def file_job_get(job_id: str) -> Any:
+        with file_jobs_lock:
+            job = file_jobs.get(job_id)
+            if job is None:
+                return JSONResponse(
+                    {"error": "unknown file job", "hint": "upload the file again"},
+                    status_code=404,
+                )
+            return dict(job)
 
     # -- polish ----------------------------------------------------------------------------
 

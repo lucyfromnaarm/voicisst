@@ -68,12 +68,35 @@ class FakeApp:
     def stop(self) -> None:
         self.stopped = True
 
+    def audio_level(self) -> float:
+        return 0.0
+
 
 @pytest.fixture
 def fake_app(monkeypatch: pytest.MonkeyPatch) -> type[FakeApp]:
     FakeApp.instances = []
     monkeypatch.setattr(cli_mod, "DictationApp", FakeApp)
     return FakeApp
+
+
+class OverlayStub:
+    """Records run_overlay wiring; never touches Tk."""
+
+    def __init__(self):
+        self.calls: list[tuple] = []
+
+    def __call__(self, cfg, bus, level_source=None):
+        self.calls.append((cfg, bus, level_source))
+
+
+@pytest.fixture(autouse=True)
+def stub_overlay(monkeypatch: pytest.MonkeyPatch) -> OverlayStub:
+    """No test in this module may start the real Tk overlay (it would open
+    a window on machines with a display, or hang a synchronous FakeThread
+    in its mainloop)."""
+    stub = OverlayStub()
+    monkeypatch.setattr(cli_mod, "run_overlay", stub)
+    return stub
 
 
 class FakeThread:
@@ -175,6 +198,85 @@ def test_main_missing_config_exits_2(monkeypatch, capsys, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# transcribe-file wiring
+
+
+def test_transcribe_file_prints_cleaned_text(runner, monkeypatch, tmp_path):
+    from voicisst.files import FileTranscript
+
+    audio_file = tmp_path / "voice.m4a"
+    audio_file.write_bytes(b"fake media")
+    engine = FakeEngine()
+    seen = {}
+
+    def fake_process(path, cfg, eng, **kwargs):
+        seen.update({"path": path, "cfg": cfg, "engine": eng, "kwargs": kwargs})
+        return FileTranscript(raw="raw words", text="Clean words.", duration_s=1.0, chunks=1)
+
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: engine)
+    monkeypatch.setattr("voicisst.files.process_audio_file", fake_process)
+    res = runner.invoke(
+        cli_mod.cli,
+        ["transcribe-file", str(audio_file), "--config", str(write_config(tmp_path))],
+    )
+    assert res.exit_code == 0, res.output
+    assert res.output == "Clean words.\n"
+    assert seen["path"] == audio_file
+    assert seen["engine"] is engine
+    assert seen["kwargs"]["polish"] is True
+    assert engine.closed == 1
+
+
+def test_transcribe_file_writes_outputs_and_remote_overrides(
+    runner, monkeypatch, tmp_path
+):
+    from voicisst.files import FileTranscript
+
+    audio_file = tmp_path / "voice.m4a"
+    out = tmp_path / "voice.md"
+    raw = tmp_path / "voice.raw.txt"
+    audio_file.write_bytes(b"fake media")
+    engine = FakeEngine()
+    captured = {}
+
+    def fake_get_engine(cfg):
+        captured["cfg"] = cfg
+        return engine
+
+    def fake_process(path, cfg, eng, **kwargs):
+        captured["kwargs"] = kwargs
+        return FileTranscript(raw="raw words", text="Clean words.", duration_s=1.0, chunks=1)
+
+    monkeypatch.setattr(cli_mod, "get_engine", fake_get_engine)
+    monkeypatch.setattr("voicisst.files.process_audio_file", fake_process)
+    res = runner.invoke(
+        cli_mod.cli,
+        [
+            "transcribe-file",
+            str(audio_file),
+            "--server", "http://big-box:8765",
+            "--token", "sekret",
+            "--language", "en",
+            "--no-polish",
+            "--chunk-seconds", "30",
+            "--output", str(out),
+            "--raw-output", str(raw),
+            "--config", str(write_config(tmp_path)),
+        ],
+    )
+    assert res.exit_code == 0, res.output
+    assert out.read_text(encoding="utf-8") == "Clean words.\n"
+    assert raw.read_text(encoding="utf-8") == "raw words\n"
+    cfg = captured["cfg"]
+    assert cfg.engine.mode == "remote"
+    assert cfg.engine.server_url == "http://big-box:8765"
+    assert cfg.engine.token == "sekret"
+    assert cfg.whisper.language == "en"
+    assert captured["kwargs"]["polish"] is False
+    assert captured["kwargs"]["chunk_seconds"] == 30.0
+
+
+# ---------------------------------------------------------------------------
 # run wiring
 
 
@@ -234,19 +336,21 @@ def test_tray_darwin_runs_tray_on_main_thread(
     monkeypatch.setattr(sys, "platform", "darwin")
     tray_calls: list[tuple] = []
 
-    def fake_run_tray(app, cfg):
+    def fake_run_tray(app, cfg, **kwargs):
         tray_calls.append((app, cfg))
 
     monkeypatch.setattr(tray_mod, "run_tray", fake_run_tray)
     res = runner.invoke(cli_mod.cli, ["run", "--tray", "--config", str(write_config(tmp_path))])
     assert res.exit_code == 0, res.output
     app = fake_app.instances[0]
-    # The only spawned thread runs the app; the tray ran inline (main thread).
-    assert [t.target for t in fake_threads.instances] == [app.run]
+    # Besides the overlay, the only spawned thread runs the app; the tray
+    # ran inline (main thread).
+    app_threads = [t for t in fake_threads.instances if t.name == "voicisst"]
+    assert [t.target for t in app_threads] == [app.run]
     assert tray_calls and tray_calls[0][0] is app
     assert app.ran
     assert app.stopped  # tray exit stops the app
-    assert fake_threads.instances[0].joined
+    assert app_threads[0].joined
 
 
 def test_tray_darwin_ctrl_c_stops_app_and_exits_cleanly(
@@ -255,7 +359,7 @@ def test_tray_darwin_ctrl_c_stops_app_and_exits_cleanly(
     monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
     monkeypatch.setattr(sys, "platform", "darwin")
 
-    def interrupted_tray(app, cfg):
+    def interrupted_tray(app, cfg, **kwargs):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(tray_mod, "run_tray", interrupted_tray)
@@ -263,7 +367,8 @@ def test_tray_darwin_ctrl_c_stops_app_and_exits_cleanly(
     assert res.exit_code == 0, res.output
     app = fake_app.instances[0]
     assert app.stopped
-    assert fake_threads.instances[0].joined
+    app_threads = [t for t in fake_threads.instances if t.name == "voicisst"]
+    assert app_threads and app_threads[0].joined
 
 
 def test_tray_other_platforms_keep_app_on_main_thread(
@@ -273,16 +378,19 @@ def test_tray_other_platforms_keep_app_on_main_thread(
     monkeypatch.setattr(sys, "platform", "linux")
     tray_calls: list[tuple] = []
 
-    def fake_run_tray(app, cfg):
+    def fake_run_tray(app, cfg, **kwargs):
         tray_calls.append((app, cfg))
 
     monkeypatch.setattr(tray_mod, "run_tray", fake_run_tray)
     res = runner.invoke(cli_mod.cli, ["run", "--tray", "--config", str(write_config(tmp_path))])
     assert res.exit_code == 0, res.output
     app = fake_app.instances[0]
-    # The only spawned thread runs the tray; the app ran inline (main thread).
-    assert [t.target for t in fake_threads.instances] == [fake_run_tray]
-    assert fake_threads.instances[0].args == (app, app.cfg)
+    # Besides the overlay, the only spawned thread runs the tray; the app
+    # ran inline (main thread).
+    tray_threads = [t for t in fake_threads.instances if t.name == "voicisst-tray"]
+    assert [t.target for t in tray_threads] == [fake_run_tray]
+    assert tray_threads[0].args == (app, app.cfg)
+    assert isinstance(tray_threads[0].kwargs.get("bus"), StateBus)  # state mirroring
     assert app.ran
     assert tray_calls and tray_calls[0][0] is app
 
@@ -380,11 +488,66 @@ def test_run_ui_shares_one_bus_and_starts_server_before_app(
     assert len(ui_threads) == 1 and ui_threads[0].daemon
 
 
-def test_run_without_ui_passes_no_bus(runner, fake_app, monkeypatch, tmp_path):
+def test_run_without_ui_or_overlay_passes_no_bus(runner, fake_app, monkeypatch, tmp_path):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    res = runner.invoke(
+        cli_mod.cli, ["run", "--no-overlay", "--config", str(write_config(tmp_path))]
+    )
+    assert res.exit_code == 0, res.output
+    assert fake_app.instances[0].kwargs.get("bus") is None
+
+
+# ---------------------------------------------------------------------------
+# overlay wiring: on by default, shares the bus, fed by app.audio_level
+
+
+def test_run_overlay_default_on_shares_bus_and_level_source(
+    runner, fake_app, fake_threads, stub_overlay, monkeypatch, tmp_path
+):
     monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
     res = runner.invoke(cli_mod.cli, ["run", "--config", str(write_config(tmp_path))])
     assert res.exit_code == 0, res.output
-    assert fake_app.instances[0].kwargs.get("bus") is None
+    app = fake_app.instances[0]
+    assert len(stub_overlay.calls) == 1
+    cfg, bus, level_source = stub_overlay.calls[0]
+    assert cfg is app.cfg
+    assert isinstance(bus, StateBus)
+    assert app.kwargs.get("bus") is bus  # one bus, shared with dictation
+    assert level_source == app.audio_level  # waveform reads the live mic
+    threads = [t for t in fake_threads.instances if t.name == "voicisst-overlay"]
+    assert len(threads) == 1 and threads[0].daemon
+
+
+def test_run_no_overlay_flag_skips_overlay(
+    runner, fake_app, fake_threads, stub_overlay, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    res = runner.invoke(
+        cli_mod.cli, ["run", "--no-overlay", "--config", str(write_config(tmp_path))]
+    )
+    assert res.exit_code == 0, res.output
+    assert stub_overlay.calls == []
+    assert not [t for t in fake_threads.instances if t.name == "voicisst-overlay"]
+
+
+def test_run_overlay_config_off_skips_overlay(
+    runner, fake_app, fake_threads, stub_overlay, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    cfg_file = write_config(tmp_path, "[ui]\noverlay = false\n")
+    res = runner.invoke(cli_mod.cli, ["run", "--config", str(cfg_file)])
+    assert res.exit_code == 0, res.output
+    assert stub_overlay.calls == []
+
+
+def test_run_overlay_flag_beats_config(
+    runner, fake_app, fake_threads, stub_overlay, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(cli_mod, "get_engine", lambda cfg: FakeEngine())
+    cfg_file = write_config(tmp_path, "[ui]\noverlay = false\n")
+    res = runner.invoke(cli_mod.cli, ["run", "--overlay", "--config", str(cfg_file)])
+    assert res.exit_code == 0, res.output
+    assert len(stub_overlay.calls) == 1
 
 
 def test_run_ui_tray_passes_bus_and_url_to_tray(
@@ -431,14 +594,18 @@ def test_run_ui_tray_darwin_keeps_tray_on_main_thread(
     )
     assert res.exit_code == 0, res.output
     app = fake_app.instances[0]
-    # Spawned threads: the UI server, then the app — the tray ran inline
-    # (main thread), exactly like the pre-UI inversion.
-    assert [t.name for t in fake_threads.instances] == ["voicisst-ui", "voicisst"]
+    # Spawned threads: the UI server, the overlay, then the app — the tray
+    # ran inline (main thread), exactly like the pre-UI inversion.
+    assert [t.name for t in fake_threads.instances] == [
+        "voicisst-ui",
+        "voicisst-overlay",
+        "voicisst",
+    ]
     assert tray_calls and tray_calls[0][0] is app
     assert isinstance(tray_calls[0][1], StateBus)  # bus reaches the tray
     assert app.ran
     assert app.stopped  # tray exit still stops the app
-    assert fake_threads.instances[1].joined
+    assert fake_threads.instances[2].joined
 
 
 # ---------------------------------------------------------------------------

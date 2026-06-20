@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /home/lucy/WebstormProjects/audioforlucy
+
+unit=voicisst-run-ui.service
+
+latest_url() {
+  journalctl --user -u "$unit" -n 80 --no-pager 2>/dev/null \
+    | grep -Eo 'http://127\.0\.0\.1:[0-9]+/\?t=[A-Za-z0-9_-]+' \
+    | tail -n 1
+}
+
+if ! systemctl --user is-active --quiet "$unit"; then
+  systemctl --user reset-failed "$unit" >/dev/null 2>&1 || true
+  systemd-run --user \
+    --unit voicisst-run-ui \
+    --working-directory=/home/lucy/WebstormProjects/audioforlucy \
+    --setenv=PYTHONPATH=src \
+    /home/lucy/WebstormProjects/audioforlucy/.venv/bin/python -m voicisst run --ui \
+    >/dev/null
+fi
+
+for _ in {1..30}; do
+  url="$(latest_url || true)"
+  if [[ -n "${url:-}" ]]; then
+    if command -v google-chrome >/dev/null 2>&1; then
+      mkdir -p "$HOME/.local/share/voicisst/chrome-profile"
+      exec google-chrome \
+        --user-data-dir="$HOME/.local/share/voicisst/chrome-profile" \
+        --no-first-run \
+        --class=Voicisst \
+        --name=Voicisst \
+        --app="$url"
+    fi
+    exec xdg-open "$url"
+  fi
+  sleep 0.2
+done
+
+if command -v google-chrome >/dev/null 2>&1; then
+  mkdir -p "$HOME/.local/share/voicisst/chrome-profile"
+  exec google-chrome \
+    --user-data-dir="$HOME/.local/share/voicisst/chrome-profile" \
+    --no-first-run \
+    --class=Voicisst \
+    --name=Voicisst \
+    --app=http://127.0.0.1:8766/
+fi
+exec xdg-open http://127.0.0.1:8766/

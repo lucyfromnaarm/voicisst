@@ -821,6 +821,55 @@ def test_engine_lazily_built_once(
 
 
 # ---------------------------------------------------------------------------
+# /api/files/jobs
+
+
+def test_file_job_upload_processes_audio_file(cfg: Config, config_file: Path) -> None:
+    from helpers import make_wav
+
+    cfg.audio.normalize = False
+    cfg.dictionary.words = ["Lucy"]
+    engine = FakeEngine()
+    client = make_client(cfg, engine=engine, config_file=config_file)
+    r = client.post(
+        "/api/files/jobs?polish=true&language=en&chunk_seconds=120",
+        content=make_wav(0.5, 16000),
+        headers={
+            "content-type": "application/octet-stream",
+            "x-voicisst-filename": "voice.wav",
+        },
+    )
+    assert r.status_code == 200, r.text
+    job_id = r.json()["id"]
+    box: dict[str, Any] = {}
+
+    def done() -> bool:
+        box["body"] = client.get(f"/api/files/jobs/{job_id}").json()
+        return box["body"].get("status") in ("done", "error")
+
+    assert _wait_for(done)
+    body = box["body"]
+    assert body["status"] == "done", body
+    raw = "raw:8000@16000:en:Lucy"
+    assert body["result"]["raw"] == raw
+    assert body["result"]["text"] == f"polished:{raw}"
+    assert body["result"]["chunks"] == 1
+
+
+def test_file_job_upload_requires_body(cfg: Config, config_file: Path) -> None:
+    client = make_client(cfg, engine=FakeEngine(), config_file=config_file)
+    r = client.post("/api/files/jobs", content=b"")
+    assert r.status_code == 400
+    assert "empty" in r.json()["error"]
+
+
+def test_file_job_unknown_id_404(cfg: Config, config_file: Path) -> None:
+    client = make_client(cfg, engine=FakeEngine(), config_file=config_file)
+    r = client.get("/api/files/jobs/missing")
+    assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # /api/polish/test
 
 

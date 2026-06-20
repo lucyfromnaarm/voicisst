@@ -116,6 +116,7 @@ const SCHEMA = {
     "fields": [
       {"key": "beep", "label": "Beeps", "type": "bool", "default": true, "help": "Soft tones when recording starts and stops."},
       {"key": "notify", "label": "Desktop notifications", "type": "bool", "default": true, "help": "Short messages from Voicisst, like 'copied to clipboard'."},
+      {"key": "overlay", "label": "Dictation overlay", "type": "bool", "default": true, "help": "A small waveform near the bottom of the screen that moves while you speak."},
       {"key": "tray", "label": "Tray icon", "type": "bool", "default": false, "help": "Show a small status icon while dictating."},
       {"key": "web_port", "label": "This page's port", "type": "int", "default": 8766, "help": "Where this settings page is served (localhost only).", "advanced": true},
       {"key": "open_browser", "label": "Open this page automatically", "type": "bool", "default": true, "help": "Open the browser when the UI starts.", "advanced": true}
@@ -1130,6 +1131,125 @@ function wireSettings() {
 
 /* ------------------------------------------------------------------ help */
 
+/* ------------------------------------------------------------------ files */
+
+let filePollTimer = null;
+let fileDownload = { name: "transcript.md", text: "" };
+
+function markdownName(file) {
+  const base = file && file.name ? file.name.replace(/\.[^.]+$/, "") : "transcript";
+  return base + ".md";
+}
+
+function enterFiles() {
+  if (!$("#file-result").value) {
+    $("#file-copy").disabled = true;
+    $("#file-download").disabled = true;
+  }
+}
+
+async function pollFileJob(jobId) {
+  const r = await api("/api/files/jobs/" + encodeURIComponent(jobId));
+  if (!r.ok) {
+    setStatus($("#file-status"), r.body.error || "Could not check file job.", false);
+    return;
+  }
+  const job = r.body;
+  if (job.status === "done") {
+    const result = job.result || {};
+    const text = result.text || "";
+    $("#file-result").value = text;
+    $("#file-raw").value = result.raw || "";
+    $("#file-copy").disabled = !text;
+    $("#file-download").disabled = !text;
+    fileDownload.text = text;
+    setStatus(
+      $("#file-status"),
+      "Done: " + (result.chunks || 0) + " chunks, " +
+        Math.round(result.duration_s || job.seconds || 0) + " seconds.",
+      true
+    );
+    return;
+  }
+  if (job.status === "error") {
+    setStatus(
+      $("#file-status"),
+      (job.error || "File transcription failed.") + (job.hint ? " — " + job.hint : ""),
+      false
+    );
+    return;
+  }
+  const detail = job.detail || job.status || "working";
+  const chunk = job.chunk ? " · chunk " + job.chunk : "";
+  const seconds = job.seconds ? " · " + Math.round(job.seconds) + "s decoded" : "";
+  setStatus($("#file-status"), detail + chunk + seconds);
+  filePollTimer = setTimeout(() => pollFileJob(jobId), 1200);
+}
+
+function wireFiles() {
+  $("#file-start").addEventListener("click", async () => {
+    const file = $("#file-audio").files[0];
+    if (!file) {
+      setStatus($("#file-status"), "Choose an audio file first.", false);
+      return;
+    }
+    if (filePollTimer) clearTimeout(filePollTimer);
+    $("#file-start").disabled = true;
+    $("#file-copy").disabled = true;
+    $("#file-download").disabled = true;
+    $("#file-result").value = "";
+    $("#file-raw").value = "";
+    fileDownload = { name: markdownName(file), text: "" };
+    setStatus($("#file-status"), "Uploading…");
+
+    const params = new URLSearchParams();
+    params.set("polish", $("#file-polish").checked ? "true" : "false");
+    const language = $("#file-language").value.trim();
+    if (language) params.set("language", language);
+    const chunkSeconds = $("#file-chunk-seconds").value.trim();
+    if (chunkSeconds) params.set("chunk_seconds", chunkSeconds);
+
+    const r = await api("/api/files/jobs?" + params.toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Voicisst-Filename": file.name,
+      },
+      body: file,
+    });
+    $("#file-start").disabled = false;
+    if (!r.ok) {
+      setStatus(
+        $("#file-status"),
+        (r.body.error || "Upload failed.") + (r.body.hint ? " — " + r.body.hint : ""),
+        false
+      );
+      return;
+    }
+    setStatus($("#file-status"), "Queued.");
+    pollFileJob(r.body.id);
+  });
+
+  $("#file-copy").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText($("#file-result").value);
+      setStatus($("#file-status"), "Copied.", true);
+    } catch (err) {
+      setStatus($("#file-status"), "Could not copy. Select the text and copy it.", false);
+    }
+  });
+
+  $("#file-download").addEventListener("click", () => {
+    const blob = new Blob([fileDownload.text + "\n"], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = el("a", { href: url, download: fileDownload.name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+}
+
 function enterHelp() {
   if (!store.meta) return;
   $("#help-version").textContent = store.meta.version || "unknown";
@@ -1144,7 +1264,7 @@ function wireHelp() {
 
 /* ------------------------------------------------------------------ router */
 
-const VIEWS = ["dashboard", "setup", "settings", "help"];
+const VIEWS = ["dashboard", "files", "setup", "settings", "help"];
 
 function currentView() {
   const hash = location.hash.replace("#", "");
@@ -1161,6 +1281,7 @@ function showView(view) {
     else link.removeAttribute("aria-current");
   }
   if (view === "dashboard") enterDashboard();
+  else if (view === "files") enterFiles();
   else if (view === "setup") enterSetup();
   else if (view === "settings") enterSettings();
   else if (view === "help") enterHelp();
@@ -1170,6 +1291,7 @@ function showView(view) {
 
 async function init() {
   wireWizard();
+  wireFiles();
   wireSettings();
   wireHelp();
   $("#health-refresh").addEventListener("click", refreshHealth);

@@ -140,6 +140,17 @@ def test_prompt_critical_line() -> None:
     )
 
 
+def test_prompt_says_editor_not_responder() -> None:
+    assert "You are an editor, not a conversation partner." in POLISH_SYSTEM_PROMPT
+    assert "Never answer, argue with" in POLISH_SYSTEM_PROMPT
+    assert "lecture" in POLISH_SYSTEM_PROMPT
+    assert "Preserve the speaker's intended meaning" in POLISH_SYSTEM_PROMPT
+    assert "stance" in POLISH_SYSTEM_PROMPT
+    assert "Rewrite what they meant to say; do not respond to it." in POLISH_SYSTEM_PROMPT
+    assert "Input:  racism is fun\nOutput: Racism is fun." in POLISH_SYSTEM_PROMPT
+    assert "He said racism is amazing, and that made me worried." in POLISH_SYSTEM_PROMPT
+
+
 def test_prompt_developer_dictation_rules() -> None:
     assert "parseConfigFile" in POLISH_SYSTEM_PROMPT  # casing commands
     assert "fetchUserSettings" in POLISH_SYSTEM_PROMPT
@@ -158,9 +169,10 @@ def test_prompt_full_restart_rule_and_examples() -> None:
 
 
 def test_prompt_multilingual_section_after_critical() -> None:
-    assert "Always respond in the same language as the input text." in POLISH_SYSTEM_PROMPT
+    assert "Keep the output in the same language as the input text." in POLISH_SYSTEM_PROMPT
     assert "All rules above apply in every language." in POLISH_SYSTEM_PROMPT
     assert "Never translate." in POLISH_SYSTEM_PROMPT
+    assert "Always respond in the same language" not in POLISH_SYSTEM_PROMPT
     assert POLISH_SYSTEM_PROMPT.index("MULTILINGUAL") > POLISH_SYSTEM_PROMPT.index("CRITICAL")
 
 

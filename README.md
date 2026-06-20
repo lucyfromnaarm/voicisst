@@ -20,8 +20,10 @@ I have ME/CFS. On bad days typing is expensive and talking is cheap, and I got t
 - Spells names right. A personal dictionary plus (on Linux) whatever text you have highlighted feed both Whisper and the polisher, so "Anja" stops coming out as "Anya".
 - Speaks your language. Whisper auto-detects 100+ languages and the polish step answers in the language you spoke.
 - Hears a whisper. RMS normalization boosts quiet speech before transcription, so you can dictate without waking the house.
+- Shows you it's listening. A small on-screen waveform moves with your voice while you dictate (and names the mic it's using), so you never wonder whether the hotkey took.
 - Two ways to talk: hold-to-talk or tap-to-toggle, with optional silence auto-stop for fully hands-free use. Every hotkey is configurable.
 - Live typing, if you want it. Streaming mode types the raw transcript while you're still speaking, then swaps it for the polished version.
+- Transcribes recordings too. Drop an audio file into the web UI, or run `voicisst transcribe-file recording.m4a --output notes.md`; long files are chunked automatically.
 - Runs fully local on any decent GPU — or split it: heavy models on the big computer (`voicisst serve`), a featherweight client on the laptop (`voicisst run --server`).
 
 ## Quickstart
@@ -66,6 +68,16 @@ voicisst ui
 ```
 
 That opens a settings page in your browser: a setup wizard that helps you pick a microphone, capture a hotkey by pressing it, and check your models — then writes the config file for you. `voicisst run --ui` adds a live dashboard that shows what dictation is doing right now (listening, transcribing, polishing...), so every audio cue has a visual equivalent and you never need sound to know the state. The page runs only on your own machine and makes no external requests. Details in [docs/UI.md](docs/UI.md).
+
+### Transcribe a recording
+
+```bash
+voicisst transcribe-file recording.m4a --output transcript.md
+```
+
+The command uses the same Whisper and polish settings as dictation, but writes
+the cleaned text instead of typing into another app. M4A/AAC needs PyAV
+(`pip install "voicisst[media]"`) or `ffmpeg` on your PATH.
 
 ## Three ways to run it
 
@@ -121,7 +133,7 @@ Voicisst has no accounts, no telemetry, and no cloud component. In local mode no
 
 ## Accessibility
 
-Voicisst exists because of a chronic illness, and it's built for limited energy and mobility first: toggle mode plus silence auto-stop means dictating without holding anything down, every hotkey and threshold is configurable, audio cues confirm state without needing to look, and the setup scripts try hard to leave nothing manual. Every audio cue also has a visual equivalent — the dashboard and tray icon show the dictation state by shape and text, not color alone — and the web UI is built to WCAG AA, keyboard-first. If something about Voicisst is hard to use with your body, that's a bug — [please open an issue](https://github.com/lucyfromnaarm/voicisst/issues).
+Voicisst exists because of a chronic illness, and it's built for limited energy and mobility first: toggle mode plus silence auto-stop means dictating without holding anything down, every hotkey and threshold is configurable, audio cues confirm state without needing to look, and the setup scripts try hard to leave nothing manual. Every audio cue also has a visual equivalent — the on-screen overlay shows each dictation state by motion as well as color, and the dashboard and tray icon show it by shape and text, never color alone — and the web UI is built to WCAG AA, keyboard-first. If something about Voicisst is hard to use with your body, that's a bug — [please open an issue](https://github.com/lucyfromnaarm/voicisst/issues).
 
 ## Docs
 
