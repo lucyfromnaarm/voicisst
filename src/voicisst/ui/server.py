@@ -380,7 +380,7 @@ def create_ui_app(
     """Build the UI app. `token` guards every request; "" disables auth
     (bare-test convenience — serve_ui always generates one)."""
     try:
-        from fastapi import Body, FastAPI, HTTPException, Request, WebSocket
+        from fastapi import FastAPI, HTTPException, Request, WebSocket
         from fastapi.concurrency import run_in_threadpool
         from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
         from fastapi.staticfiles import StaticFiles
@@ -779,10 +779,7 @@ def create_ui_app(
     # -- files -----------------------------------------------------------------------------
 
     @app.post("/api/files/jobs")
-    async def file_job_create(
-        request: Request,
-        upload: bytes = Body(..., media_type="application/octet-stream"),
-    ) -> Any:
+    async def file_job_create(request: Request) -> Any:
         content_length = request.headers.get("content-length", "")
         if content_length.isdigit() and int(content_length) > MAX_FILE_UPLOAD_BYTES:
             return JSONResponse(
@@ -792,6 +789,7 @@ def create_ui_app(
                 },
                 status_code=413,
             )
+        upload = await request.body()
         if not upload:
             return JSONResponse(
                 {"error": "upload body is empty", "hint": "choose an audio file first"},

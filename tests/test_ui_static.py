@@ -102,7 +102,8 @@ def test_landmarks_views_and_live_regions(audit: MarkupAudit) -> None:
     # Grouped controls use fieldset/legend.
     assert {"fieldset", "legend"} <= audit.tags
     # The hash-routed views plus the wizard root exist by id.
-    assert {"dashboard", "files", "setup", "settings", "help", "wizard", "wizard-progress"} <= audit.ids
+    expected_ids = {"dashboard", "files", "setup", "settings", "help", "wizard"}
+    assert expected_ids | {"wizard-progress"} <= audit.ids
     # The nav links to every view.
     for view in ("#dashboard", "#files", "#setup", "#settings", "#help"):
         assert view in audit.hrefs
