@@ -4,11 +4,13 @@ What Voicisst needs from each OS, and how to give it that with the least
 friction. After any setup change, `voicisst selftest` tells you whether it
 worked.
 
-The web UI (`voicisst ui`, see [UI.md](UI.md)) works identically on every
-platform — it runs in your normal browser, so nothing below applies to it.
-The platform differences are about hotkeys, typing, and audio. The UI's
-setup wizard knows about them too: it shows the permission steps for the OS
-you're actually on and skips the rest.
+The web UI works identically on every platform: `voicisst ui` opens setup,
+settings, and file transcription, while `voicisst run --ui` runs dictation and
+the live dashboard together. It runs in your normal browser, so nothing below
+applies to the web UI itself. The platform differences are about hotkeys,
+typing, audio, and login/startup integration. The UI's setup wizard knows about
+them too: it shows the permission steps for the OS you're actually on and skips
+the rest.
 
 ## Linux
 
@@ -61,6 +63,11 @@ journalctl --user -u voicisst -f                  # watch the logs
 The unit expects `voicisst` at `~/.local/bin/voicisst` (the pipx/uv default) — edit
 `ExecStart` if `command -v voicisst` says yours lives elsewhere.
 
+That service starts background dictation with `voicisst run`. If you want the
+browser dashboard to be started by the service too, change `ExecStart` to
+`%h/.local/bin/voicisst run --ui` and consider setting `open_browser = false`
+under `[ui]` if you only want the URL in the logs.
+
 ### Wayland notes
 
 - ydotool synthesizes input at the kernel level, so it works on every
@@ -99,7 +106,7 @@ section.
 ## macOS
 
 ```bash
-pipx install "voicisst[local,ui]"
+pipx install "voicisst[local,ui,media]"
 voicisst selftest
 voicisst
 ```
@@ -136,13 +143,16 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/one.octavia.voicisst.pli
 # older macOS: launchctl load -w ~/Library/LaunchAgents/one.octavia.voicisst.plist
 ```
 
+Use `voicisst run --ui` instead of `voicisst run` in the plist if you want the
+live dashboard to start with dictation.
+
 ## Windows
 
 ```powershell
 irm https://raw.githubusercontent.com/lucyfromnaarm/voicisst/main/scripts/install.ps1 | iex
 ```
 
-or `pipx install "voicisst[local,ui]"`, or unzip the release binary.
+or `pipx install "voicisst[local,ui,media]"`, or unzip the release binary.
 
 Default hotkey: **right Ctrl** (`ctrl_r`), hold to talk. Hotkeys and typing
 both use pynput; pasting is Ctrl+V.
@@ -158,7 +168,8 @@ exclusion for the Voicisst executable.
 **Start at login:** press Win+R, run `shell:startup`, and create a shortcut
 there pointing at `voicisst.exe` (pipx installs it under
 `%USERPROFILE%\.local\bin`; `where voicisst` shows the path). Set the shortcut to
-run minimized if you don't want a console window.
+run minimized if you don't want a console window. Use arguments `run` for
+background dictation or `run --ui` when you also want the browser dashboard.
 
 ## Hardware notes (all platforms)
 

@@ -10,7 +10,7 @@ modules. Implementations must match the signatures and semantics here.
 2. **Polished output** — an LLM reworks raw speech: removes fillers
    ("um", "uh"), applies self-corrections ("at 2… actually 3" → "at 3"),
    formats spoken lists into numbered Markdown lists, punctuates.
-3. **100+ languages** — Whisper auto-detect; polish responds in the input
+3. **100+ languages** — Whisper auto-detect; polish keeps output in the input
    language.
 4. **Spells names right** — user dictionary + (Linux) primary-selection
    context fed to both Whisper (initial_prompt) and the polisher.
@@ -57,7 +57,7 @@ src/voicisst/
   protocol.py               WAV codec + message schema constants
   streaming.py              StreamingTyper (live typing w/ diff replace)
   dictation.py              DictationApp orchestrator
-  cli.py                    click CLI (voicisst run/serve/selftest/config)
+  cli.py                    click CLI (run/serve/ui/transcribe-file/selftest/config)
   selftest.py               environment diagnostics
   tray.py                   optional pystray tray icon
   overlay.py                on-screen waveform pill (stdlib tkinter)
@@ -65,7 +65,8 @@ tests/                      pytest; NO hardware/network/GPU at test time
 .github/workflows/          ci.yml (lint+test matrix), release.yml (binaries)
 packaging/                  pyinstaller spec, systemd units, launchd plist, etc.
 scripts/                    install.sh, install.ps1, setup-linux.sh
-docs/                       configuration, server, platforms, troubleshooting
+docs/                       configuration, server, platforms, troubleshooting,
+                             UI, UI architecture contract
 ```
 
 ## Hard rules (all modules)
@@ -422,8 +423,8 @@ OverlayModel so tests stay headless.
   py{3.10, 3.12}. Ubuntu needs `sudo apt-get install -y libportaudio2`.
   Install `-e .[server,dev]` (NOT local/faster-whisper — tests mock it).
 - `release.yml`: on tag `v*` → (1) build sdist+wheel (`python -m build`),
-  (2) PyInstaller onedir per OS (ubuntu-22.04, macos-13 x86_64, macos-14
-  arm64, windows-latest) bundling `[local,server]`, zipped as
+  (2) PyInstaller onedir per OS (ubuntu-22.04, macos-15-intel x86_64,
+  macos-14 arm64, windows-latest) bundling `[local,server,ui,media]`, zipped as
   `voicisst-<version>-<os>-<arch>.{tar.gz,zip}`, (3) GitHub Release with all
   artifacts + checksums, (4) optional PyPI publish job gated on
   `PYPI_API_TOKEN` secret existing.

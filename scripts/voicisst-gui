@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /home/lucy/WebstormProjects/audioforlucy
-
 unit=voicisst-run-ui.service
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="${VOICISST_PROJECT_ROOT:-$(cd -- "$script_dir/.." && pwd)}"
+service_name="${unit%.service}"
+
+if [[ -x "$repo_root/.venv/bin/python" ]]; then
+  voicisst_cmd=("$repo_root/.venv/bin/python" -m voicisst)
+  pythonpath="$repo_root/src"
+elif command -v voicisst >/dev/null 2>&1; then
+  voicisst_cmd=("$(command -v voicisst)")
+  pythonpath=""
+else
+  voicisst_cmd=("python3" -m voicisst)
+  pythonpath="$repo_root/src"
+fi
 
 latest_url() {
   journalctl --user -u "$unit" -n 80 --no-pager 2>/dev/null \
@@ -13,12 +25,11 @@ latest_url() {
 
 if ! systemctl --user is-active --quiet "$unit"; then
   systemctl --user reset-failed "$unit" >/dev/null 2>&1 || true
-  systemd-run --user \
-    --unit voicisst-run-ui \
-    --working-directory=/home/lucy/WebstormProjects/audioforlucy \
-    --setenv=PYTHONPATH=src \
-    /home/lucy/WebstormProjects/audioforlucy/.venv/bin/python -m voicisst run --ui \
-    >/dev/null
+  run_args=(--user --unit "$service_name" --working-directory="$repo_root")
+  if [[ -n "$pythonpath" ]]; then
+    run_args+=(--setenv="PYTHONPATH=$pythonpath")
+  fi
+  systemd-run "${run_args[@]}" "${voicisst_cmd[@]}" run --ui >/dev/null
 fi
 
 for _ in {1..30}; do

@@ -4,7 +4,7 @@ All notable changes to Voicisst are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-06-20
 
 ### Added
 
@@ -35,6 +35,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Shorter settings page**: each section now shows only the settings most
   people touch; the rest sit behind a closed "More options" disclosure. The
   polish API key field only appears for the `openai` backend.
+- **Faithful polish prompt**: the cleanup prompt is now explicit that the LLM
+  is an editor, not a conversation partner. It preserves the speaker's intent
+  and stance instead of answering, arguing, lecturing, or moralising.
+- Release/install packaging now includes the UI and media extras where users
+  expect them, so M4A upload/transcription works from the standard install
+  paths.
 
 ## [0.2.0] - 2026-06-11
 
@@ -83,8 +89,9 @@ cross-platform rewrite.
   100+ languages, per-utterance vocabulary via `initial_prompt`.
 - LLM polish through Ollama or any OpenAI-compatible server: removes
   fillers, applies self-corrections ("at 2... actually 3" → "at 3"), turns
-  spoken enumerations into numbered Markdown lists, punctuates, and answers
-  in the input language. Falls back to the raw transcript on any failure.
+  spoken enumerations into numbered Markdown lists, punctuates, and keeps
+  the output in the input language. Falls back to the raw transcript on any
+  failure.
 - Opt-in thinking mode for reasoning models (off by default; skipped below a
   configurable input length even when on) and a VRAM watchdog that unloads
   the polish model when free GPU memory runs low.
@@ -116,6 +123,6 @@ cross-platform rewrite.
   (udev/uinput/input group/ydotoold), systemd units, macOS LaunchAgent
   template.
 
-[Unreleased]: https://github.com/lucyfromnaarm/voicisst/compare/v0.2.0...HEAD
+[1.0.0]: https://github.com/lucyfromnaarm/voicisst/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/lucyfromnaarm/voicisst/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucyfromnaarm/voicisst/releases/tag/v0.1.0

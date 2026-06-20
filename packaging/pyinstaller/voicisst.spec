@@ -1,7 +1,7 @@
 # -*- mode: python -*-
 """PyInstaller spec for the standalone ``voicisst`` binary (onedir).
 
-Build (with voicisst[local,server,ui] + pyinstaller installed):
+Build (with voicisst[local,server,ui,media] + pyinstaller installed):
 
     pyinstaller --noconfirm packaging/pyinstaller/voicisst.spec
 
@@ -45,6 +45,15 @@ for package in ("faster_whisper", "ctranslate2"):
         datas += pkg_datas
         binaries += pkg_binaries
         hiddenimports += pkg_hidden
+
+# PyAV powers M4A/AAC and other media-container decoding for transcribe-file
+# and the UI Files page. Its wheels include native libraries that need to be
+# carried into standalone release builds.
+if _have("av"):
+    pkg_datas, pkg_binaries, pkg_hidden = collect_all("av")
+    datas += pkg_datas
+    binaries += pkg_binaries
+    hiddenimports += pkg_hidden
 
 # macOS/Windows sounddevice wheels bundle PortAudio inside the
 # _sounddevice_data package (Linux wheels use the system libportaudio).

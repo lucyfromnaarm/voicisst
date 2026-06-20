@@ -14,7 +14,7 @@ It needs the `ui` extra. The install scripts include it; if you installed
 by hand, add it:
 
 ```bash
-pipx install "voicisst[local,ui]"
+pipx install "voicisst[local,ui,media]"
 ```
 
 ## Starting it
@@ -37,6 +37,14 @@ Either way, Voicisst prints the UI's address in the terminal and opens it in
 your default browser (turn that off with `ui.open_browser = false` or
 `--no-browser`). The UI keeps working if you close the tab; just reopen
 the printed URL.
+
+On Linux desktops, `scripts/voicisst-gui` is a small launcher helper for
+desktop entries and pinned taskbar icons. It starts (or reuses) a user
+systemd `voicisst-run-ui` service, finds the current tokened URL in the
+journal, and opens it in a browser app window when Chrome is available. Some
+desktops still group that window under the browser if they ignore
+`StartupWMClass`; the Voicisst service is still the same `voicisst run --ui`
+process.
 
 Useful flags and settings:
 
@@ -102,7 +110,7 @@ brand-new address, finish setup first and check after).
 
 **5. Polish.** The LLM cleanup step that turns rambling into clean text.
 Pick a backend (Ollama is the default), and the wizard checks it can
-actually reach it and that the model responds, using a sample sentence
+actually reach it and that the model can edit, using a sample sentence
 full of "um"s. If you don't want polish — it's optional — there's a clear
 "skip polish" path; you'll get raw transcripts.
 
@@ -223,7 +231,7 @@ UI doesn't work across restarts for the same reason.)
 
 **`voicisst ui` complains about a missing package.** The UI's dependencies
 live in the `ui` extra: `pip install "voicisst[ui]"` (or reinstall with
-`pipx install "voicisst[local,ui]"`).
+`pipx install "voicisst[local,ui,media]"`).
 
 For everything not UI-specific — hotkeys that don't fire, silent
 microphones, polish problems — see

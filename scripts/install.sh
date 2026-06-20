@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Voicisst installer for Linux and macOS.
 #
-# Installs voicisst[local,server,tray,ui] as an isolated CLI tool using
+# Installs voicisst[local,server,media,tray,ui] as an isolated CLI tool using
 # uv (preferred) or pipx (installed via pip --user as a fallback). Tries
 # PyPI first; if the package is not published there yet, installs straight
 # from the git repository.
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/lucyfromnaarm/voicisst"
-EXTRAS="local,server,tray,ui"
+EXTRAS="local,server,media,tray,ui"
 PYPI_SPEC="voicisst[${EXTRAS}]"
 GIT_SPEC="voicisst[${EXTRAS}] @ git+${REPO_URL}"
 
@@ -67,7 +67,7 @@ Voicisst is installed. Next steps:
   2. voicisst ui              # guided setup in your browser
                               # (or by hand: voicisst config init)
   3. voicisst selftest        # check mic, hotkeys, whisper, polish, injection
-  4. voicisst run             # hold the hotkey, speak, release
+  4. voicisst run --ui        # dictation plus the live dashboard
 
 For LLM polish, install Ollama (https://ollama.com) and pull a model, or
 point [polish] at any OpenAI-compatible server in the config.

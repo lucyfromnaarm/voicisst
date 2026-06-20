@@ -8,7 +8,7 @@ Voicisst reads a TOML file, environment variables, and CLI flags, in this order
 3. Legacy environment variables (`WHISPER_MODEL`, `OLLAMA_MODEL`, ... — kept
    from the original prototype)
 4. `VOICISST_*` environment variables
-5. CLI flags (`--server`, `--toggle`, `--language`, ...)
+5. CLI flags (`--server`, `--toggle`, `--language`, `--ui`, ...)
 
 Useful commands:
 
@@ -60,7 +60,7 @@ any reason, Voicisst delivers the raw transcript instead and tells you why.
 | `keep_alive` | `"30m"` | How long Ollama keeps the model loaded after a request. |
 | `num_ctx` | `8192` | Context window passed to the backend. |
 | `num_predict` | `2048` | Max tokens the polisher may generate. |
-| `think` | `false` | Allow "thinking" models to reason before answering. Off by default: thinking adds many seconds of latency per utterance, and the polish task rarely needs it. Opt in for long-form quality if you like. |
+| `think` | `false` | Allow "thinking" models to reason before editing. Off by default: thinking adds many seconds of latency per utterance, and the polish task rarely needs it. Opt in for long-form quality if you like. |
 | `think_min_chars` | `100` | Even with `think = true`, skip thinking for inputs shorter than this — short utterances don't benefit. |
 | `num_gpu` | `-1` | Ollama `num_gpu` option (layers to offload). `-1` lets the backend decide. |
 | `timeout` | `60.0` | Per-request timeout in seconds. Raise it if your model is slow to cold-start. |
@@ -267,6 +267,9 @@ voicisst run --language de                                  # whisper.language
 voicisst run --config /path/to/other.toml                   # alternate config file
 voicisst run --tray                                         # ui.tray=true
 voicisst run --ui                                           # also start the web UI
+voicisst run --no-overlay                                   # ui.overlay=false for this run
+voicisst transcribe-file recording.m4a --output notes.md    # file -> cleaned text
+voicisst transcribe-file recording.m4a --no-polish          # file -> raw transcript
 voicisst serve --host 0.0.0.0 --port 8765 --token s3cret    # server.*
 voicisst ui --port 9000 --no-browser                        # ui.web_port / ui.open_browser
 ```

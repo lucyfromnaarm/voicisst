@@ -1,14 +1,14 @@
-# Voicisst UI — architecture contract (v0.2.0)
+# Voicisst UI — architecture contract (v1.0.0)
 
-The UI is a **local web app**: onboarding wizard, settings editor, and a
-live dictation dashboard. It is served by Voicisst itself on
+The UI is a **local web app**: onboarding wizard, settings editor, live
+dictation dashboard, and file-transcription workspace. It is served by Voicisst itself on
 `127.0.0.1:<ui.web_port>` (default 8766) and opened in the user's normal
 browser. No Node, no build step: hand-written, accessible HTML/CSS/JS
 shipped as package data in `src/voicisst/ui/static/`.
 
 Two entry modes:
-- `voicisst ui` — UI server standalone (settings/onboarding; engine
-  features lazy-load on demand).
+- `voicisst ui` — UI server standalone (settings/onboarding/files; engine
+  features lazy-load on demand; dashboard reports dictation as not running).
 - `voicisst run --ui` — dictation + UI together; the dashboard shows live
   state from the shared `events.StateBus`.
 
@@ -88,7 +88,13 @@ crash). Blocking work runs via `run_in_threadpool`.
   "detail"}`. `GET /api/engine/health` → engine.health() or 503.
 - `POST /api/polish/test` body `{"text"}` (default sample with fillers)
   → `{"result", "changed": result != input}`.
-- `POST /api/dictation/test`? NOT in v0.2.0 — the dashboard tells users
+- `POST /api/files/jobs?polish=true&language=&chunk_seconds=120` body raw
+  file bytes, header `X-Voicisst-Filename` → `{"id","status":"queued"}`.
+  Decodes/chunks via `files.py`, runs blocking work in a background worker,
+  and keeps per-run in-memory job state.
+- `GET /api/files/jobs/{id}` →
+  `{"status","detail","chunk","seconds","result"|null,"error","hint"}`.
+- `POST /api/dictation/test`? NOT in v1.0.0 — the dashboard tells users
   to just use their hotkey and watch the state.
 
 Module must lazy-import fastapi/uvicorn/tomlkit; missing → EngineError
@@ -97,7 +103,7 @@ pattern from server/app.py for FastAPI annotation resolution.
 
 ## Frontend (src/voicisst/ui/static/: index.html, app.css, app.js)
 
-Single page, four views (hash-routed: #dashboard #setup #settings #help),
+Single page, five views (hash-routed: #dashboard #setup #settings #files #help),
 nav as a proper `<nav>` with `aria-current`. On load: `GET /api/meta`;
 when `onboarded` is false → #setup; else #dashboard.
 
@@ -169,6 +175,10 @@ when `onboarded` is false → #setup; else #dashboard.
     interpreted by one small visibility function.
   - The wizard's engine step branches the same way (local fields vs
     remote fields, never both at once).
+- **Files**: upload one recording, optional language override, polish toggle,
+  chunk-seconds control, progress polling, cleaned Markdown download/copy, and
+  raw transcript disclosure. Long files are chunked; M4A/AAC requires PyAV
+  (`voicisst[media]`) or `ffmpeg`; WAV has a stdlib fallback.
 - **Help**: links to docs, "rerun setup", troubleshooting quick list,
   version from /api/meta.
 
@@ -199,8 +209,8 @@ boring and readable.
   SHAPE + color per state (hollow/filled/half/diamond/check/cross), so
   states are distinguishable without color. Menu gains "Open settings
   UI" when the UI server is running (pass the tokened URL in).
-- `cli.py`: new command `voicisst ui [--port] [--no-browser]` →
-  serve_ui(cfg) standalone. `voicisst run` gains `--ui` flag (and
+- `cli.py`: `voicisst ui [--port] [--no-browser]` →
+  serve_ui(cfg) standalone. `voicisst run` has a `--ui` flag (and
   honors a `ui.web_port`/auto-open config): builds one StateBus, passes
   it to DictationApp AND serve_ui (UI in a daemon thread — uvicorn in a
   thread with its own loop; dictation stays on the main thread except

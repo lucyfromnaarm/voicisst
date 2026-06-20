@@ -18,7 +18,7 @@ voicisst serve                        # binds 127.0.0.1:8765 by default
 On the laptop:
 
 ```bash
-pipx install voicisst       # no extras needed; inference is remote
+pipx install "voicisst[media]"       # media only needed for local M4A file decoding
 voicisst run --server http://big-box:8765 --token s3cret
 ```
 
@@ -120,6 +120,14 @@ POST /v1/process            # transcribe + polish in one round trip
      {"audio_b64": "...", "language": null, "vocab": "", "polish": true}
      -> {"raw": "raw transcript", "text": "polished text"}
 ```
+
+### File transcription in remote mode
+
+`voicisst transcribe-file` and the web UI's Files page still decode and chunk
+the recording on the client before sending work to the server. That keeps long
+recordings away from the short-dictation request limits. M4A/AAC decoding on
+the client needs the `media` extra (`pip install "voicisst[media]"`) or
+`ffmpeg` on `PATH`; the server only receives normal WAV chunks.
 
 ### WebSocket: `/v1/stream?token=...`
 

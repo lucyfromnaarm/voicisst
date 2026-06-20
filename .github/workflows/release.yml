@@ -57,7 +57,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libportaudio2
       - name: Install package and PyInstaller
-        run: pip install '.[local,server]' pyinstaller
+        run: pip install '.[local,server,ui,media]' pyinstaller
       - name: Build binary
         run: pyinstaller --noconfirm packaging/pyinstaller/voicisst.spec
       - name: Package (Unix)

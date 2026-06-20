@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "voicisst"
-version = "0.2.1"
+version = "1.0.0"
 description = "Free, open-source voice dictation: speech to clear, polished writing in every app. Local Whisper + LLM cleanup, client/server or all-in-one."
 readme = "README.md"
 license = { text = "MIT" }
@@ -15,7 +15,7 @@ keywords = [
     "wispr-flow", "stt", "push-to-talk",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: MIT License",

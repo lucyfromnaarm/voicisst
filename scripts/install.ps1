@@ -1,6 +1,6 @@
 # Voicisst installer for Windows (PowerShell 5.1+ / pwsh).
 #
-# Installs voicisst[local,server,ui] as an isolated CLI tool using uv
+# Installs voicisst[local,server,media,ui] as an isolated CLI tool using uv
 # (preferred) or pipx (installed via pip --user as a fallback). Tries PyPI
 # first; if the package is not published there yet, installs straight from
 # the git repository.
@@ -11,7 +11,7 @@
 $ErrorActionPreference = 'Stop'
 
 $RepoUrl = 'https://github.com/lucyfromnaarm/voicisst'
-$Extras = 'local,server,ui'
+$Extras = 'local,server,media,ui'
 $PypiSpec = "voicisst[$Extras]"
 $GitSpec = "voicisst[$Extras] @ git+$RepoUrl"
 
@@ -86,7 +86,7 @@ Write-Host @'
   2. voicisst ui              # guided setup in your browser
                               # (or by hand: voicisst config init)
   3. voicisst selftest        # check mic, hotkeys, whisper, polish, injection
-  4. voicisst run             # hold the hotkey (right Ctrl), speak, release
+  4. voicisst run --ui        # dictation plus the live dashboard
 
 For LLM polish, install Ollama (https://ollama.com) and pull a model, or
 point [polish] at any OpenAI-compatible server in the config.
